@@ -1,17 +1,19 @@
 #pragma once
+#include "../libs/parallel_scheduler/parallel_scheduler.h"
 #include "database.h"
 #include "htmlparser.h"
 #include "includes.h"
 #include <mutex>
 
 #define THREAD_COUNT 8
+#define MAX_LINKS 100
 
 class Crawler {
 public:
   Crawler(size_t thread_count = THREAD_COUNT);
   ~Crawler();
   void load_links_from_file(const std::string &filename);
-  void process_links(size_t size);
+  void process_links(size_t size = MAX_LINKS);
   void process(const std::string &current_link);
 
 private:

@@ -1,5 +1,5 @@
 NAME = libparallel_scheduler.a
-CC = cc
+CC = g++
 AR = ar crs
 CFLAGS = -Wall -Wextra -pthread
 SRC = parallel_scheduler.c

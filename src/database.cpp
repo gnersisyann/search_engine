@@ -8,6 +8,10 @@ void Database::connect(const std::string &db_name) {
   }
 }
 void Database::create_table() {
+  if (!db) {
+    std::cerr << "Database is not connected." << std::endl;
+    return;
+  }
   char *err_msg = nullptr;
   std::string sql = "CREATE TABLE IF NOT EXISTS pages ("
                     "id INTEGER PRIMARY KEY AUTOINCREMENT,"
@@ -20,6 +24,10 @@ void Database::create_table() {
 }
 
 bool Database::is_url_processed(const std::string &url) {
+  if (!db) {
+    std::cerr << "Database is not connected." << std::endl;
+    return false;
+  }
   sqlite3_stmt *stmt;
   std::string sql = "SELECT 1 FROM pages WHERE url = ? LIMIT 1;";
   if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
@@ -39,6 +47,10 @@ bool Database::is_url_processed(const std::string &url) {
   return result == SQLITE_ROW;
 }
 void Database::insert_page(const std::string &url, const std::string &text) {
+  if (!db) {
+    std::cerr << "Database is not connected." << std::endl;
+    return;
+  }
   sqlite3_stmt *stmt;
   std::string sql = "INSERT INTO pages (url, content) VALUES (?, ?);";
   if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {

@@ -27,9 +27,10 @@ void *worker(void *arg) {
 }
 
 parallel_scheduler *parallel_scheduler_create(size_t capacity) {
-  parallel_scheduler *sched = malloc(sizeof(parallel_scheduler));
+  parallel_scheduler *sched =
+      (parallel_scheduler *)malloc(sizeof(parallel_scheduler));
   sched->capacity = capacity;
-  sched->threads = malloc(capacity * sizeof(pthread_t));
+  sched->threads = (pthread_t *)malloc(capacity * sizeof(pthread_t));
   sched->task_queue_head = NULL;
   pthread_mutex_init(&sched->mutex, NULL);
   pthread_cond_init(&sched->cond, NULL);
@@ -43,7 +44,7 @@ parallel_scheduler *parallel_scheduler_create(size_t capacity) {
 
 void parallel_scheduler_run(parallel_scheduler *sched, task_func func,
                             void *arg) {
-  task_node *node = malloc(sizeof(task_node));
+  task_node *node = (task_node *)malloc(sizeof(task_node));
   node->func = func;
   node->arg = arg;
   node->next = NULL;
