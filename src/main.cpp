@@ -12,5 +12,6 @@ int main(int argc, char **argv) {
             << " and MAX_LINKS=" << MAX_LINKS << std::endl;
   std::cerr << "Loading links from file: " << filename << std::endl;
   crawler.load_links_from_file(filename);
-  crawler.process_links(MAX_LINKS);
+  while (true)
+    crawler.process_links(MAX_LINKS);
 }

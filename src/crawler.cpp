@@ -44,39 +44,76 @@ void Crawler::load_links_from_file(const std::string &filename) {
     if (!link.empty() && visited_links.find(link) == visited_links.end()) {
       link_queue.push(link);
       visited_links.insert(link);
+      main_links.insert(link);
     }
   }
 }
 
+static bool is_valid_domain(const std::string &link,
+                            const std::string &domain) {
+  try {
+    std::string::size_type pos = link.find(domain);
+    if (pos == std::string::npos) {
+      return false;
+    }
+    if (pos > 0 && link[pos - 1] != '/' && link[pos - 1] != '.') {
+      return false;
+    }
+    return true;
+  } catch (const std::exception &e) {
+    std::cerr << "Error in is_valid_domain: " << e.what() << std::endl;
+    return false;
+  }
+}
+
 void Crawler::process(const std::string &current_link) {
-  std::cerr << "Processing link: " << current_link << std::endl;
+  {
+    std::lock_guard<std::mutex> lock(queue_mutex);
+    std::cerr << "Processing link: " << current_link << std::endl;
+  }
   std::string content;
   std::unordered_set<std::string> links;
   std::string text;
+  {
+    std::lock_guard<std::mutex> lock(queue_mutex);
+    fetch_page(current_link, content);
+  }
+  {
+    std::lock_guard<std::mutex> lock(queue_mutex);
+    parse_page(content, links, text);
+  }
+  {
+    std::lock_guard<std::mutex> lock(queue_mutex);
+    save_to_database(current_link, text);
+  }
+  {
+    std::lock_guard<std::mutex> lock(queue_mutex);
+    std::cerr << "Adding links to queue. Current link count: " << links.size()
+              << std::endl;
+  }
 
-  fetch_page(current_link, content);
-
-  parse_page(content, links, text);
-
-  save_to_database(current_link, text);
-
-  std::cerr << "Adding links to queue. Current link count: " << links.size()
-            << std::endl;
   for (const auto &link : links) {
-    if (visited_links.find(link) == visited_links.end()) {
-      std::cerr << "Adding link to queue: " << link << std::endl;
-      link_queue.push(link);
-      visited_links.insert(link);
-    } else {
-      std::cerr << "Link already visited: " << link << std::endl;
+    bool valid_domain = false;
+    for (const auto &main_link : main_links) {
+      if (is_valid_domain(link, main_link)) {
+        valid_domain = true;
+        break;
+      }
+    }
+    if (valid_domain && visited_links.find(link) == visited_links.end()) {
+      {
+        std::lock_guard<std::mutex> lock(queue_mutex);
+        link_queue.push(link);
+        visited_links.insert(link);
+      }
     }
   }
 }
 
 void Crawler::process_links(size_t size) {
-  std::cerr << "Starting to process links with size limit: " << size
-            << std::endl;
-  std::cerr << "Initial queue size: " << link_queue.size() << std::endl;
+  //   std::cerr << "Starting to process links with size limit: " << size
+  //             << std::endl;
+  //   std::cerr << "Initial queue size: " << link_queue.size() << std::endl;
   while (!link_queue.empty() && visited_links.size() < size) {
     std::string current_link;
 
@@ -103,6 +140,9 @@ void Crawler::process_links(size_t size) {
           crawler->process(link);
         },
         task_data.release());
+  }
+  if (visited_links.size() == size) {
+    exit(0);
   }
 }
 
@@ -141,8 +181,8 @@ void Crawler::parse_page(const std::string &content,
   }
   links = parser.extract_links(content);
   text = parser.extract_text(content);
-  std::cerr << "Parsing page content for URL: " << content.substr(0, 50)
-            << "..." << std::endl;
+  //   std::cerr << "Parsing page content for URL: " << content.substr(0, 50)
+  //             << "..." << std::endl;
   std::cerr << "Extracted links count: " << links.size() << std::endl;
   std::cerr << "Extracted text length: " << text.size() << std::endl;
 }

@@ -5,8 +5,8 @@
 #include "includes.h"
 #include <mutex>
 
-#define THREAD_COUNT 8
-#define MAX_LINKS 100
+#define THREAD_COUNT 10
+#define MAX_LINKS 500
 
 class Crawler {
 public:
@@ -24,6 +24,7 @@ private:
 
   std::queue<std::string> link_queue;
   std::unordered_set<std::string> visited_links;
+  std::unordered_set<std::string> main_links;
   std::mutex queue_mutex;
   Database db;
   HTMLParser parser;
