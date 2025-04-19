@@ -6,7 +6,7 @@
 #include <mutex>
 
 #define THREAD_COUNT 10
-#define MAX_LINKS 500
+#define MAX_LINKS 50
 
 class Crawler {
 public:
@@ -29,4 +29,5 @@ private:
   Database db;
   HTMLParser parser;
   parallel_scheduler *scheduler;
+  size_t links_size;
 };
