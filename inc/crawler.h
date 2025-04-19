@@ -7,7 +7,7 @@
 #include <mutex>
 
 #define THREAD_COUNT 10
-#define MAX_LINKS 50
+#define MAX_LINKS 500
 
 class Crawler {
 public:
@@ -34,7 +34,7 @@ private:
   HTMLParser parser;
   parallel_scheduler *scheduler;
   size_t links_size;
-  std::mutex task_mutex; // Мьютекс для синхронизации задач
-  std::condition_variable task_cv; // Условная переменная для ожидания
+  std::mutex task_mutex;
+  std::condition_variable task_cv;
   size_t active_tasks = 0;
 };

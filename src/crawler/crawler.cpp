@@ -87,7 +87,15 @@ void Crawler::run(size_t size) {
         }
 
         std::cerr << "Processing remaining links..." << std::endl;
-        process_remaining_links();
+        for (int i = 0; i < THREAD_COUNT; ++i) {
+          parallel_scheduler_run(
+              scheduler,
+              [](void *arg) {
+                Crawler *crawler = static_cast<Crawler *>(arg);
+                crawler->process_remaining_links();
+              },
+              this);
+        }
         break;
       }
 
@@ -162,8 +170,11 @@ void Crawler::process_remaining_links() {
       std::cerr << "No more links in the queue to process." << std::endl;
       break;
     }
-    current_link = link_queue.front();
-    link_queue.pop();
+    {
+      std::lock_guard<std::mutex> lock(task_mutex);
+      current_link = link_queue.front();
+      link_queue.pop();
+    }
 
     std::string content;
     std::unordered_set<std::string> links;
@@ -172,10 +183,13 @@ void Crawler::process_remaining_links() {
     fetch_page(current_link, content);
     parse_page(content, links, text, 0);
     save_to_database(current_link, text);
-
-    visited_links.insert(current_link);
-    std::cerr << "Processed remaining link: " << current_link
-              << ", Visited links count: " << visited_links.size() << std::endl;
+    {
+      std::lock_guard<std::mutex> lock(task_mutex);
+      visited_links.insert(current_link);
+      std::cerr << "Processed remaining link: " << current_link
+                << ", Visited links count: " << visited_links.size()
+                << std::endl;
+    }
   }
 
   std::cerr << "Finished processing remaining links." << std::endl;
