@@ -3,6 +3,7 @@
 #include "database.h"
 #include "htmlparser.h"
 #include "includes.h"
+#include <condition_variable>
 #include <mutex>
 
 #define THREAD_COUNT 10
@@ -13,13 +14,16 @@ public:
   Crawler(size_t thread_count = THREAD_COUNT);
   ~Crawler();
   void load_links_from_file(const std::string &filename);
-  void process_links(size_t size = MAX_LINKS);
-  void process(const std::string &current_link);
+  void run(size_t size = MAX_LINKS);
 
 private:
+  void process_links(size_t size = MAX_LINKS);
+  void process(const std::string &current_link);
+  void process_remaining_links();
   void fetch_page(const std::string &url, std::string &content);
   void parse_page(const std::string &content,
-                  std::unordered_set<std::string> &links, std::string &text);
+                  std::unordered_set<std::string> &links, std::string &text,
+                  int mode);
   void save_to_database(const std::string &url, const std::string &text);
 
   std::queue<std::string> link_queue;
@@ -30,4 +34,7 @@ private:
   HTMLParser parser;
   parallel_scheduler *scheduler;
   size_t links_size;
+  std::mutex task_mutex; // Мьютекс для синхронизации задач
+  std::condition_variable task_cv; // Условная переменная для ожидания
+  size_t active_tasks = 0;
 };

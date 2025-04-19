@@ -66,6 +66,39 @@ static bool is_valid_domain(const std::string &link,
   }
 }
 
+void Crawler::run(size_t size) {
+  links_size = size;
+  std::cerr << "Running crawler with size limit: " << size << std::endl;
+
+  while (true) {
+    process_links(size);
+
+    {
+      std::lock_guard<std::mutex> lock(queue_mutex);
+
+      if (visited_links.size() >= size) {
+        std::cerr
+            << "Visited links limit reached. Waiting for tasks to finish..."
+            << std::endl;
+
+        {
+          std::unique_lock<std::mutex> lock(task_mutex);
+          task_cv.wait(lock, [this]() { return active_tasks == 0; });
+        }
+
+        std::cerr << "Processing remaining links..." << std::endl;
+        process_remaining_links();
+        break;
+      }
+
+      if (link_queue.empty() && visited_links.size() < size) {
+        std::cerr << "No more links to process. Exiting..." << std::endl;
+        break;
+      }
+    }
+  }
+}
+
 void Crawler::process(const std::string &current_link) {
   {
     std::lock_guard<std::mutex> lock(queue_mutex);
@@ -77,7 +110,7 @@ void Crawler::process(const std::string &current_link) {
   std::string text;
 
   fetch_page(current_link, content);
-  parse_page(content, links, text);
+  parse_page(content, links, text, 1);
   save_to_database(current_link, text);
 
   {
@@ -85,23 +118,31 @@ void Crawler::process(const std::string &current_link) {
     std::cerr << "Adding links to queue. Current link count: " << links.size()
               << std::endl;
 
-    for (const auto &link : links) {
-      bool valid_domain = false;
+    if (visited_links.size() < links_size) {
+      for (const auto &link : links) {
+        bool valid_domain = false;
 
-      for (const auto &main_link : main_links) {
-        if (is_valid_domain(link, main_link)) {
-          valid_domain = true;
-          break;
+        for (const auto &main_link : main_links) {
+          if (is_valid_domain(link, main_link)) {
+            valid_domain = true;
+            break;
+          }
         }
-      }
 
-      if (valid_domain && visited_links.find(link) == visited_links.end()) {
-        if (link_queue.size() < links_size) {
-          link_queue.push(link);
-          visited_links.insert(link);
+        if (valid_domain && visited_links.find(link) == visited_links.end()) {
+          if (link_queue.size() < links_size) {
+            std::cout << "Adding link to queue and visited: " << link
+                      << std::endl;
+            link_queue.push(link);
+            visited_links.insert(link);
+          }
         }
       }
     }
+
+    visited_links.insert(current_link);
+
+    std::cerr << "Visited links count: " << visited_links.size() << std::endl;
 
     if (visited_links.size() >= links_size) {
       std::cerr << "Visited links limit reached. Stopping processing..."
@@ -111,14 +152,43 @@ void Crawler::process(const std::string &current_link) {
   }
 }
 
+void Crawler::process_remaining_links() {
+  std::cerr << "Processing remaining links in the queue..." << std::endl;
+
+  while (true) {
+    std::string current_link;
+
+    if (link_queue.empty()) {
+      std::cerr << "No more links in the queue to process." << std::endl;
+      break;
+    }
+    current_link = link_queue.front();
+    link_queue.pop();
+
+    std::string content;
+    std::unordered_set<std::string> links;
+    std::string text;
+
+    fetch_page(current_link, content);
+    parse_page(content, links, text, 0);
+    save_to_database(current_link, text);
+
+    visited_links.insert(current_link);
+    std::cerr << "Processed remaining link: " << current_link
+              << ", Visited links count: " << visited_links.size() << std::endl;
+  }
+
+  std::cerr << "Finished processing remaining links." << std::endl;
+}
+
 void Crawler::process_links(size_t size) {
-  links_size = size;
   {
     std::lock_guard<std::mutex> lock(queue_mutex);
     std::cerr << "Starting to process links with size limit: " << size
               << std::endl;
     std::cerr << "Initial queue size: " << link_queue.size() << std::endl;
   }
+
   while (true) {
     std::string current_link;
 
@@ -129,6 +199,11 @@ void Crawler::process_links(size_t size) {
       }
       current_link = link_queue.front();
       link_queue.pop();
+    }
+
+    {
+      std::lock_guard<std::mutex> lock(task_mutex);
+      active_tasks++;
     }
 
     auto task_data =
@@ -143,8 +218,19 @@ void Crawler::process_links(size_t size) {
           std::string link = task_data->second;
 
           crawler->process(link);
+
+          {
+            std::lock_guard<std::mutex> lock(crawler->task_mutex);
+            crawler->active_tasks--;
+            crawler->task_cv.notify_one();
+          }
         },
         task_data.release());
+  }
+
+  {
+    std::unique_lock<std::mutex> lock(task_mutex);
+    task_cv.wait(lock, [this]() { return active_tasks == 0; });
   }
 }
 
@@ -176,13 +262,15 @@ void Crawler::fetch_page(const std::string &url, std::string &content) {
 
 void Crawler::parse_page(const std::string &content,
                          std::unordered_set<std::string> &links,
-                         std::string &text) {
+                         std::string &text, int mode) {
   if (content.empty()) {
     links.clear();
     text.clear();
     return;
   }
-  links = parser.extract_links(content);
+  if (mode) {
+    links = parser.extract_links(content);
+  }
   text = parser.extract_text(content);
   std::cerr << "Extracted links count: " << links.size() << std::endl;
   std::cerr << "Extracted text length: " << text.size() << std::endl;
