@@ -1,60 +1,65 @@
-CRAWLER 				= 	crawler
+CC                  = g++
+CFLAGS              = -Wall -Wextra -O3
+RM                  = rm -f
 
-SEARCHER 				= 	searcher
+NAME                = crawler
+SEARCHER            = searcher
+OTHER				= logs.txt \
+						parser.db
 
-CC 						= 	g++
+LIBS_DIR            = libs/parallel_scheduler
+LIBS_FILE           = $(LIBS_DIR)/libparallel_scheduler.a
+CFLAGS              += -I$(LIBS_DIR) -Iinc
+LDFLAGS             = -L$(LIBS_DIR) -lparallel_scheduler -pthread -lgumbo -lcurl -lsqlite3
+MAKE_LIB            = make -C
 
-HEADER 					=	inc/includes.h \
-							inc/crawler.h \
-							inc/database.h \
-							inc/htmlparser.h \
-							inc/searcher.h
+SRC_DIR             = src
+CRAWLER_SRC_DIR     = $(SRC_DIR)/crawler
+SEARCHER_SRC_DIR    = $(SRC_DIR)/searcher
+DATABASE_SRC_DIR    = $(SRC_DIR)/database
+HTMLPARSER_SRC_DIR  = $(SRC_DIR)/htmlparser
 
-OTHER					= 	parser.db \
-							parser.db-journal \
-							logs.txt
+OBJ_DIR             = obj
+CRAWLER_OBJ_DIR     = $(OBJ_DIR)/crawler
+SEARCHER_OBJ_DIR    = $(OBJ_DIR)/searcher
+DATABASE_OBJ_DIR    = $(OBJ_DIR)/database
+HTMLPARSER_OBJ_DIR  = $(OBJ_DIR)/htmlparser
 
-CFLAGS 					= 	-Wall -Wextra -Ilibs/parallel_scheduler -Iinc -O3
+CRAWLER_SRC         = $(CRAWLER_SRC_DIR)/main.cpp \
+                      $(CRAWLER_SRC_DIR)/crawler.cpp \
+                      $(DATABASE_SRC_DIR)/database.cpp \
+                      $(HTMLPARSER_SRC_DIR)/htmlparser.cpp
 
-LDFLAGS 				= 	-Llibs/parallel_scheduler -lparallel_scheduler -pthread -lgumbo -lcurl -lsqlite3
+SEARCHER_SRC        = $(SEARCHER_SRC_DIR)/main.cpp \
+                      $(SEARCHER_SRC_DIR)/searcher.cpp \
+                      $(DATABASE_SRC_DIR)/database.cpp
 
-PARALLEL_SCHEDULER_PATH = 	libs/parallel_scheduler
+CRAWLER_OBJ         = $(CRAWLER_SRC:$(SRC_DIR)/%.cpp=$(OBJ_DIR)/%.o)
+SEARCHER_OBJ        = $(SEARCHER_SRC:$(SRC_DIR)/%.cpp=$(OBJ_DIR)/%.o)
 
-SRC_CRAWLER 			= 	src/crawler/main.cpp \
-							src/crawler/crawler.cpp \
-							src/database/database.cpp \
-							src/htmlparser/htmlparser.cpp
+all: $(NAME) $(SEARCHER)
 
-SRC_SEARCH 				= 	src/searcher/main.cpp \
-							src/database/database.cpp \
-							src/searcher/searcher.cpp
+$(NAME): $(LIBS_FILE) $(CRAWLER_OBJ)
+	$(CC) $(CFLAGS) $(CRAWLER_OBJ) $(LDFLAGS) -o $@
 
-OBJ_CRAWLER 			= 	$(SRC_CRAWLER:.cpp=.o)
+$(SEARCHER): $(LIBS_FILE) $(SEARCHER_OBJ)
+	$(CC) $(CFLAGS) $(SEARCHER_OBJ) $(LDFLAGS) -o $@
 
-OBJ_SEARCH 				= 	$(SRC_SEARCH:.cpp=.o)
+$(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -c $< -o $@
 
-all: subsystems $(CRAWLER) $(SEARCHER)
-
-subsystems:
-	make -C $(PARALLEL_SCHEDULER_PATH)
-
-$(CRAWLER): $(OBJ_CRAWLER)
-	$(CC) $^ $(LDFLAGS) -o $@
-
-$(SEARCHER): $(OBJ_SEARCH)
-	$(CC) $^ $(LDFLAGS) -o $@
-
-%.o: %.cpp $(HEADER)
-	$(CC) $(CFLAGS) $(LDFLAGS) -c $< -o $@
+$(LIBS_FILE):
+	$(MAKE_LIB) $(LIBS_DIR)
 
 clean:
-	$(MAKE) -C $(PARALLEL_SCHEDULER_PATH) clean
-	rm -f $(OBJ_CRAWLER) $(OBJ_SEARCH)
+	$(MAKE_LIB) $(LIBS_DIR) clean
+	$(RM) -rf $(OBJ_DIR) $(OTHER)
 
 fclean: clean
-	$(MAKE) -C $(PARALLEL_SCHEDULER_PATH) fclean
-	rm -f $(CRAWLER) $(SEARCHER) $(OTHER)
+	$(MAKE_LIB) $(LIBS_DIR) fclean
+	$(RM) $(NAME) $(SEARCHER)
 
 re: fclean all
 
-.PHONY: all clean fclean re subsystems
+.PHONY: all clean fclean re
