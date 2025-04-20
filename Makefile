@@ -1,13 +1,14 @@
 CRAWLER 				= 	crawler
 
-SEARCH 					= 	search
+SEARCHER 				= 	searcher
 
 CC 						= 	g++
 
 HEADER 					=	inc/includes.h \
 							inc/crawler.h \
 							inc/database.h \
-							inc/htmlparser.h
+							inc/htmlparser.h \
+							inc/searcher.h
 
 OTHER					= 	parser.db \
 							parser.db-journal \
@@ -24,13 +25,15 @@ SRC_CRAWLER 			= 	src/crawler/main.cpp \
 							src/database/database.cpp \
 							src/htmlparser/htmlparser.cpp
 
-#SRC_SEARCH 			= 	src/main.cpp src/database.cpp src/htmlparser.cpp
+SRC_SEARCH 				= 	src/searcher/main.cpp \
+							src/database/database.cpp \
+							src/searcher/searcher.cpp
 
 OBJ_CRAWLER 			= 	$(SRC_CRAWLER:.cpp=.o)
 
-#OBJ_SEARCH 			= 	$(SRC_SEARCH:.cpp=.o)
+OBJ_SEARCH 				= 	$(SRC_SEARCH:.cpp=.o)
 
-all: subsystems $(CRAWLER) #$(SEARCH)
+all: subsystems $(CRAWLER) $(SEARCHER)
 
 subsystems:
 	make -C $(PARALLEL_SCHEDULER_PATH)
@@ -38,7 +41,7 @@ subsystems:
 $(CRAWLER): $(OBJ_CRAWLER)
 	$(CC) $^ $(LDFLAGS) -o $@
 
-$(SEARCH): $(OBJ_SEARCH)
+$(SEARCHER): $(OBJ_SEARCH)
 	$(CC) $^ $(LDFLAGS) -o $@
 
 %.o: %.cpp $(HEADER)
@@ -50,7 +53,7 @@ clean:
 
 fclean: clean
 	$(MAKE) -C $(PARALLEL_SCHEDULER_PATH) fclean
-	rm -f $(CRAWLER) $(SEARCH) $(OTHER)
+	rm -f $(CRAWLER) $(SEARCHER) $(OTHER)
 
 re: fclean all
 

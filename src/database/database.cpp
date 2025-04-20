@@ -1,8 +1,9 @@
 #include "../../inc/database.h"
 #include <filesystem>
 
-void Database::connect(const std::string &db_name) {
-  std::filesystem::remove(db_name.c_str());
+void Database::connect(const std::string &db_name, int mode) {
+  if (mode == CRAWLER)
+    std::filesystem::remove(db_name.c_str());
   if (sqlite3_open(db_name.c_str(), &db) != SQLITE_OK) {
     std::cerr << "SQLite3 connection error: " << sqlite3_errmsg(db) << "\n";
     sqlite3_close(db);
@@ -82,3 +83,4 @@ Database::~Database() {
   if (db)
     sqlite3_close(db);
 }
+sqlite3 *Database::get_db() { return db; }

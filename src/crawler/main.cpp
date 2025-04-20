@@ -41,6 +41,7 @@ int main(int argc, char **argv) {
               << argv[1] << std::endl;
     exit(EXIT_FAILURE);
   }
+
   Crawler crawler(THREAD_COUNT);
   std::string filename = argv[1];
   std::cerr << "Starting Crawler with THREAD_COUNT=" << THREAD_COUNT

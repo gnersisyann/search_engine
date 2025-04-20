@@ -25,7 +25,7 @@ Crawler::Crawler(size_t thread_count) {
   }
   LOG("Parallel scheduler created successfully");
 
-  db.connect("parser.db");
+  db.connect("parser.db", CRAWLER);
   db.create_table();
   LOG("Database connected and table created.");
 }
