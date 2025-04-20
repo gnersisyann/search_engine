@@ -1,20 +1,32 @@
 CRAWLER 				= 	crawler
+
 SEARCH 					= 	search
+
 CC 						= 	g++
+
 HEADER 					=	inc/includes.h \
 							inc/crawler.h \
 							inc/database.h \
 							inc/htmlparser.h
-DB						= 	parser.db parser.db-journal
+
+DB						= 	parser.db \
+							parser.db-journal
+
 CFLAGS 					= 	-Wall -Wextra -Ilibs/parallel_scheduler -Iinc -O3
+
 LDFLAGS 				= 	-Llibs/parallel_scheduler -lparallel_scheduler -pthread -lgumbo -lcurl -lsqlite3
+
 PARALLEL_SCHEDULER_PATH = 	libs/parallel_scheduler
+
 SRC_CRAWLER 			= 	src/crawler/main.cpp \
 							src/crawler/crawler.cpp \
-							src/crawler/database.cpp \
-							src/crawler/htmlparser.cpp
+							src/database/database.cpp \
+							src/htmlparser/htmlparser.cpp
+
 #SRC_SEARCH 			= 	src/main.cpp src/database.cpp src/htmlparser.cpp
+
 OBJ_CRAWLER 			= 	$(SRC_CRAWLER:.cpp=.o)
+
 #OBJ_SEARCH 			= 	$(SRC_SEARCH:.cpp=.o)
 
 all: subsystems $(CRAWLER) #$(SEARCH)
