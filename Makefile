@@ -9,8 +9,9 @@ HEADER 					=	inc/includes.h \
 							inc/database.h \
 							inc/htmlparser.h
 
-DB						= 	parser.db \
-							parser.db-journal
+OTHER					= 	parser.db \
+							parser.db-journal \
+							logs.txt
 
 CFLAGS 					= 	-Wall -Wextra -Ilibs/parallel_scheduler -Iinc -O3
 
@@ -49,7 +50,7 @@ clean:
 
 fclean: clean
 	$(MAKE) -C $(PARALLEL_SCHEDULER_PATH) fclean
-	rm -f $(CRAWLER) $(SEARCH) $(DB)
+	rm -f $(CRAWLER) $(SEARCH) $(OTHER)
 
 re: fclean all
 
