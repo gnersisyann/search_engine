@@ -1,8 +1,5 @@
 #include "../../inc/crawler.h"
-#include <algorithm>
-#include <fstream>
-#include <iostream>
-#include <string>
+
 
 int count_lines_in_file(const std::string &filename) {
   std::ifstream file(filename);

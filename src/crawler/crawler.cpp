@@ -1,6 +1,5 @@
 #include "../../inc/crawler.h"
-#include <fstream>
-#include <memory>
+#include <thread>
 
 static std::ofstream log_file("logs.txt", std::ios::trunc);
 
@@ -58,14 +57,7 @@ void Crawler::load_links_from_file(const std::string &filename) {
 static bool is_valid_domain(const std::string &link,
                             const std::string &domain) {
   try {
-    std::string::size_type pos = link.find(domain);
-    if (pos == std::string::npos) {
-      return false;
-    }
-    if (pos > 0 && link[pos - 1] != '/' && link[pos - 1] != '.') {
-      return false;
-    }
-    return true;
+    return UrlUtils::is_same_domain(link, domain);
   } catch (const std::exception &e) {
     LOG("Error in is_valid_domain: " << e.what());
     return false;
@@ -117,12 +109,54 @@ void Crawler::process(const std::string &current_link) {
     LOG("Processing link: " << current_link);
   }
 
+  // Проверяем, разрешено ли посещать URL согласно robots.txt
+  if (!robots_parser.is_allowed(user_agent, current_link)) {
+    LOG("URL not allowed by robots.txt: " << current_link);
+
+    {
+      std::lock_guard<std::mutex> lock(queue_mutex);
+      visited_links.insert(current_link); // Помечаем URL как посещенный, чтобы
+                                          // избежать повторной проверки
+    }
+
+    return;
+  }
+
+  // Соблюдаем crawl-delay для домена
+  {
+    std::string domain = UrlUtils::extract_domain(current_link);
+    int crawl_delay = robots_parser.get_crawl_delay(user_agent, domain);
+
+    if (crawl_delay > 0) {
+      std::lock_guard<std::mutex> lock(domain_access_mutex);
+
+      // Проверяем, когда последний раз был доступ к этому домену
+      auto now = std::chrono::steady_clock::now();
+
+      if (domain_last_access.find(domain) != domain_last_access.end()) {
+        auto last_access = domain_last_access[domain];
+        auto elapsed =
+            std::chrono::duration_cast<std::chrono::seconds>(now - last_access)
+                .count();
+
+        if (elapsed < crawl_delay) {
+          // Если время с последнего доступа меньше crawl-delay, то делаем паузу
+          std::this_thread::sleep_for(
+              std::chrono::seconds(crawl_delay - elapsed));
+        }
+      }
+
+      // Обновляем время последнего доступа
+      domain_last_access[domain] = std::chrono::steady_clock::now();
+    }
+  }
+
   std::string content;
   std::unordered_set<std::string> links;
   std::string text;
 
   fetch_page(current_link, content);
-  parse_page(content, links, text, 1);
+  parse_page(content, links, text, 1, current_link);
   save_to_database(current_link, text);
 
   {
@@ -182,7 +216,7 @@ void Crawler::process_remaining_links() {
     std::string text;
 
     fetch_page(current_link, content);
-    parse_page(content, links, text, 0);
+    parse_page(content, links, text, 0, current_link);
     save_to_database(current_link, text);
     {
       std::lock_guard<std::mutex> lock(task_mutex);
@@ -258,6 +292,16 @@ void Crawler::fetch_page(const std::string &url, std::string &content) {
   curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
   curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
   curl_easy_setopt(curl, CURLOPT_WRITEDATA, &content);
+
+  // Устанавливаем User-Agent
+  curl_easy_setopt(curl, CURLOPT_USERAGENT, user_agent.c_str());
+
+  // Следуем редиректам
+  curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+
+  // Устанавливаем таймаут
+  curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
+
   CURLcode res = curl_easy_perform(curl);
   if (res != CURLE_OK) {
     LOG("Error: curl_easy_perform() failed for URL: "
@@ -274,14 +318,15 @@ void Crawler::fetch_page(const std::string &url, std::string &content) {
 
 void Crawler::parse_page(const std::string &content,
                          std::unordered_set<std::string> &links,
-                         std::string &text, int mode) {
+                         std::string &text, int mode,
+                         const std::string &base_url) {
   if (content.empty()) {
     links.clear();
     text.clear();
     return;
   }
   if (mode) {
-    links = parser.extract_links(content);
+    links = parser.extract_links(content, base_url);
   }
   text = parser.extract_text(content);
   LOG("Extracted links count: " << links.size());

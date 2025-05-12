@@ -3,8 +3,8 @@
 #include "database.h"
 #include "htmlparser.h"
 #include "includes.h"
-#include <condition_variable>
-#include <mutex>
+#include "robots_parser.h"
+#include "url_utils.h"
 
 #define THREAD_COUNT 10
 #define MAX_LINKS 500
@@ -23,7 +23,7 @@ private:
   void fetch_page(const std::string &url, std::string &content);
   void parse_page(const std::string &content,
                   std::unordered_set<std::string> &links, std::string &text,
-                  int mode);
+                  int mode, const std::string &base_url);
   void save_to_database(const std::string &url, const std::string &text);
 
   std::queue<std::string> link_queue;
@@ -37,4 +37,10 @@ private:
   std::mutex task_mutex;
   std::condition_variable task_cv;
   size_t active_tasks = 0;
+  RobotsParser robots_parser;
+  std::string user_agent = "MyWebCrawler/1.0"; // Ваш User-Agent строка
+  std::unordered_map<std::string,
+                     std::chrono::time_point<std::chrono::steady_clock>>
+      domain_last_access;
+  std::mutex domain_access_mutex;
 };

@@ -16,3 +16,17 @@ public:
 private:
   sqlite3 *db;
 };
+
+class StmtGuard {
+public:
+  StmtGuard(sqlite3_stmt *stmt);
+  ~StmtGuard();
+
+  sqlite3_stmt *get();
+  operator sqlite3_stmt *();
+
+private:
+  sqlite3_stmt *stmt_;
+  StmtGuard(const StmtGuard &) = delete;
+  StmtGuard &operator=(const StmtGuard &) = delete;
+};
