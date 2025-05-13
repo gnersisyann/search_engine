@@ -1,48 +1,44 @@
 #include "../../inc/crawler.h"
+#include "../../inc/crawler_config.h"
+#include <iostream>
+#include <fstream>
 
+CrawlerConfig config;  // Глобальная переменная для конфигурации
 
-int count_lines_in_file(const std::string &filename) {
-  std::ifstream file(filename);
-  if (!file.is_open()) {
-    std::cerr << "Error: Unable to open file " << filename;
-    return -1;
+int main(int argc, char* argv[]) {
+  try {
+    // Загружаем конфигурацию из файла, если путь указан
+    if (argc > 1) {
+      config = CrawlerConfig::load_from_file(argv[1]);
+    }
+
+    // Создаем краулер с конфигурацией
+    Crawler crawler(config);
+
+    // Загружаем начальные ссылки
+    if (argc > 2) {
+      crawler.load_links_from_file(argv[2]);
+    } else {
+      crawler.load_links_from_file("links.txt");
+    }
+
+    // Запускаем краулер с максимальным количеством ссылок из конфигурации
+    crawler.run(config.max_links);
+
+    // Выводим итоговый отчет о производительности
+    std::cout << "\n===== Final Performance Report =====\n";
+    crawler.print_performance_report(std::cout);
+
+    // Также можно сохранить отчет в файл
+    std::ofstream report_file("performance_report.txt");
+    if (report_file.is_open()) {
+      crawler.print_performance_report(report_file);
+      std::cout << "Performance report saved to 'performance_report.txt'\n";
+    }
+
+    return 0;
+  } catch (const std::exception& e) {
+    std::cerr << "Error: " << e.what() << std::endl;
+    return 1;
   }
-  return std::count(std::istreambuf_iterator<char>(file),
-                    std::istreambuf_iterator<char>(), '\n') +
-         1;
-}
-
-int main(int argc, char **argv) {
-
-  if (argc != 2 && argc != 3) {
-    std::cerr << "Invalid arguments, use ./crawler [filename].txt "
-                 "[max_links]{optional}"
-              << std::endl;
-    exit(EXIT_FAILURE);
-  }
-
-  int links = MAX_LINKS;
-  if (argc == 3) {
-    links = std::stoi(argv[2]);
-  }
-
-  int line_count = count_lines_in_file(argv[1]);
-  if (line_count == -1) {
-    std::cerr << "Error: Unable to read file " << argv[1] << std::endl;
-    exit(EXIT_FAILURE);
-  }
-
-  if (argc == 3 && links <= line_count) {
-    std::cerr << "Invalid max_link count, must be greater than the number of "
-                 "lines in "
-              << argv[1] << std::endl;
-    exit(EXIT_FAILURE);
-  }
-
-  Crawler crawler(THREAD_COUNT);
-  std::string filename = argv[1];
-  std::cerr << "Starting Crawler with THREAD_COUNT=" << THREAD_COUNT
-            << " and MAX_LINKS=" << links << std::endl;
-  crawler.load_links_from_file(filename);
-  crawler.run(links);
 }

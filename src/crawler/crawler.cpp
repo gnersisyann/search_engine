@@ -1,10 +1,8 @@
 #include "../../inc/crawler.h"
 #include <thread>
 
-static std::ofstream log_file("logs.txt", std::ios::trunc);
-
 #define LOG(msg)                                                               \
-  if (log_file.is_open()) {                                                    \
+  if (config.verbose_logging && log_file.is_open()) {                          \
     log_file << msg << std::endl;                                              \
   }
 
@@ -15,18 +13,26 @@ static size_t WriteCallback(void *contents, size_t size, size_t nmemb,
   return totalSize;
 }
 
-Crawler::Crawler(size_t thread_count) {
-  scheduler = parallel_scheduler_create(thread_count);
-  LOG("Creating parallel scheduler with thread count: " << thread_count);
+Crawler::Crawler(const CrawlerConfig &config) : config(config) {
+  // Открываем лог-файл с использованием имени из конфигурации
+  log_file.open(config.log_filename, std::ios::trunc);
+
+  scheduler = parallel_scheduler_create(config.thread_count);
+  LOG("Creating parallel scheduler with thread count: " << config.thread_count);
   if (!scheduler) {
     LOG("Failed to create parallel scheduler");
     throw std::runtime_error("Failed to create parallel scheduler");
   }
   LOG("Parallel scheduler created successfully");
 
-  db.connect("parser.db", CRAWLER);
+  // Используем имя БД из конфигурации
+  db.connect(config.db_name.c_str(), CRAWLER);
   db.create_table();
   LOG("Database connected and table created.");
+
+  // Устанавливаем user-agent из конфигурации
+  user_agent = config.user_agent;
+  MetricsCollector::instance().reset();
 }
 
 Crawler::~Crawler() {
@@ -34,6 +40,38 @@ Crawler::~Crawler() {
     parallel_scheduler_destroy(scheduler);
   }
   scheduler = nullptr;
+  stop_metrics_reporting();
+}
+
+// Новые методы для работы с метриками
+void Crawler::print_performance_report(std::ostream &os) {
+  MetricsCollector::instance().print_report(os);
+}
+
+void Crawler::reset_metrics() { MetricsCollector::instance().reset(); }
+
+void Crawler::start_metrics_reporting() {
+  if (metrics_running_)
+    return;
+
+  metrics_running_ = true;
+  metrics_thread_ = std::make_unique<std::thread>([this]() {
+    while (metrics_running_) {
+      std::this_thread::sleep_for(
+          std::chrono::seconds(10)); // Вывод каждые 10 секунд
+
+      if (config.verbose_logging && log_file.is_open()) {
+        MetricsCollector::instance().print_report(log_file);
+      }
+    }
+  });
+}
+
+void Crawler::stop_metrics_reporting() {
+  metrics_running_ = false;
+  if (metrics_thread_ && metrics_thread_->joinable()) {
+    metrics_thread_->join();
+  }
 }
 
 void Crawler::load_links_from_file(const std::string &filename) {
@@ -47,26 +85,50 @@ void Crawler::load_links_from_file(const std::string &filename) {
   std::string link;
   while (std::getline(file, link)) {
     if (!link.empty() && visited_links.find(link) == visited_links.end()) {
-      link_queue.push(link);
+      // Начальные ссылки имеют глубину 0 и высокий приоритет
+      add_to_queue(link, 0, 10.0);
       visited_links.insert(link);
       main_links.insert(link);
+      url_depths[link] = 0;
     }
   }
+}
+
+// В add_to_queue метод:
+void Crawler::add_to_queue(const std::string &url, int depth, double priority) {
+  // Передаем конфигурацию в приоритизатор
+  static UrlPrioritizer prioritizer(config);
+
+  // Если приоритет не указан, вычисляем его
+  if (priority == 0.0) {
+    priority = prioritizer.calculate_priority(url, depth);
+  }
+
+  link_queue.push(UrlItem(url, depth, priority));
+  url_depths[url] = depth;
+
+  LOG("Added URL with priority " << priority << ": " << url);
 }
 
 static bool is_valid_domain(const std::string &link,
                             const std::string &domain) {
   try {
     return UrlUtils::is_same_domain(link, domain);
-  } catch (const std::exception &e) {
-    LOG("Error in is_valid_domain: " << e.what());
+  } catch (const std::exception &) {
+    // Просто возвращаем false при исключении, без логирования
     return false;
   }
 }
 
 void Crawler::run(size_t size) {
+  config.thread_count = 1;
+  if (size == 0)
+    size = config.max_links;
   links_size = size;
   LOG("Running crawler with size limit: " << size);
+
+  // Запускаем периодический вывод метрик
+  start_metrics_reporting();
 
   while (true) {
     process_links(size);
@@ -83,7 +145,7 @@ void Crawler::run(size_t size) {
         }
 
         LOG("Processing remaining links...");
-        for (int i = 0; i < THREAD_COUNT; ++i) {
+        for (size_t i = 0; i < config.thread_count; ++i) {
           parallel_scheduler_run(
               scheduler,
               [](void *arg) {
@@ -103,22 +165,34 @@ void Crawler::run(size_t size) {
   }
 }
 
-void Crawler::process(const std::string &current_link) {
+void Crawler::process(const std::string &current_link, int depth) {
+  MEASURE_TIME("URL Processing");
+
   {
     std::lock_guard<std::mutex> lock(queue_mutex);
-    LOG("Processing link: " << current_link);
+    LOG("Processing link (depth " << depth << "): " << current_link);
   }
+  MetricsCollector::instance().increment_active_threads();
 
-  // Проверяем, разрешено ли посещать URL согласно robots.txt
   if (!robots_parser.is_allowed(user_agent, current_link)) {
-    LOG("URL not allowed by robots.txt: " << current_link);
+    try {
+      LOG("URL not allowed by robots.txt: " << current_link);
+      LOG("URL not allowed by robots.txt: " << current_link);
 
-    {
-      std::lock_guard<std::mutex> lock(queue_mutex);
-      visited_links.insert(current_link); // Помечаем URL как посещенный, чтобы
-                                          // избежать повторной проверки
+      {
+        std::lock_guard<std::mutex> lock(queue_mutex);
+        visited_links.insert(current_link); // Помечаем URL как посещенный
+      }
+      {
+        std::lock_guard<std::mutex> lock(queue_mutex);
+        MetricsCollector::instance().set_queue_size(link_queue.size());
+        MetricsCollector::instance().set_visited_count(visited_links.size());
+      }
+
+      MetricsCollector::instance().decrement_active_threads();
+    } catch (const std::exception &e) {
+      LOG("Exception in robots check: " << e.what());
     }
-
     return;
   }
 
@@ -140,7 +214,7 @@ void Crawler::process(const std::string &current_link) {
                 .count();
 
         if (elapsed < crawl_delay) {
-          // Если время с последнего доступа меньше crawl-delay, то делаем паузу
+          // Делаем паузу если нужно
           std::this_thread::sleep_for(
               std::chrono::seconds(crawl_delay - elapsed));
         }
@@ -155,38 +229,52 @@ void Crawler::process(const std::string &current_link) {
   std::unordered_set<std::string> links;
   std::string text;
 
-  fetch_page(current_link, content);
-  parse_page(content, links, text, 1, current_link);
-  save_to_database(current_link, text);
+  // Используем fetch_page_with_retry для надежной загрузки
+  bool fetch_success = fetch_page_with_retry(current_link, content);
 
-  {
-    std::lock_guard<std::mutex> lock(queue_mutex);
-    LOG("Adding links to queue. Current link count: " << links.size());
+  // Обрабатываем страницу только если загрузка успешна
+  if (fetch_success) {
+    parse_page(content, links, text, 1, current_link);
+    save_to_database(current_link, text);
 
-    if (visited_links.size() < links_size) {
-      for (const auto &link : links) {
-        bool valid_domain = false;
+    {
+      std::lock_guard<std::mutex> lock(queue_mutex);
+      LOG("Adding links to queue. Current link count: " << links.size());
 
-        for (const auto &main_link : main_links) {
-          if (is_valid_domain(link, main_link)) {
-            valid_domain = true;
-            break;
+      if (visited_links.size() < links_size) {
+        for (const auto &link : links) {
+          bool valid_domain = false;
+
+          for (const auto &main_link : main_links) {
+            if (is_valid_domain(link, main_link)) {
+              valid_domain = true;
+              break;
+            }
           }
-        }
 
-        if (valid_domain && visited_links.find(link) == visited_links.end()) {
-          if (link_queue.size() < links_size) {
-            LOG("Adding link to queue and visited: " << link);
-            link_queue.push(link);
-            visited_links.insert(link);
+          if (valid_domain && visited_links.find(link) == visited_links.end()) {
+            if (link_queue.size() < links_size) {
+              LOG("Adding link to queue and visited (depth " << depth + 1
+                                                             << "): " << link);
+              // Добавляем с увеличенной глубиной
+              add_to_queue(link, depth + 1);
+              visited_links.insert(link);
+            }
           }
         }
       }
     }
+  } else {
+    LOG("Failed to fetch page: " << current_link
+                                 << ", skipping link processing");
+  }
 
+  {
+    std::lock_guard<std::mutex> lock(queue_mutex);
     visited_links.insert(current_link);
-
-    LOG("Visited links count: " << visited_links.size());
+    LOG("Visited links count: "
+        << visited_links.size()
+        << (fetch_success ? "" : " (after fetch failure)"));
 
     if (visited_links.size() >= links_size) {
       LOG("Visited links limit reached. Stopping processing...");
@@ -205,30 +293,41 @@ void Crawler::process_remaining_links() {
       LOG("No more links in the queue to process.");
       break;
     }
+
     {
       std::lock_guard<std::mutex> lock(task_mutex);
-      current_link = link_queue.front();
+      UrlItem item = link_queue.top();
       link_queue.pop();
+      current_link = item.url;
     }
 
     std::string content;
     std::unordered_set<std::string> links;
     std::string text;
 
-    fetch_page(current_link, content);
-    parse_page(content, links, text, 0, current_link);
-    save_to_database(current_link, text);
+    // Используем fetch_page_with_retry для надежной загрузки
+    bool fetch_success = fetch_page_with_retry(current_link, content);
+
+    if (fetch_success) {
+      parse_page(content, links, text, 0, current_link);
+      save_to_database(current_link, text);
+    } else {
+      LOG("Failed to fetch remaining page: " << current_link);
+    }
+
     {
       std::lock_guard<std::mutex> lock(task_mutex);
       visited_links.insert(current_link);
       LOG("Processed remaining link: "
-          << current_link << ", Visited links count: " << visited_links.size());
+          << current_link << ", Visited links count: " << visited_links.size()
+          << (fetch_success ? "" : " (fetch failed)"));
     }
   }
 
   LOG("Finished processing remaining links.");
 }
 
+// В process_links:
 void Crawler::process_links(size_t size) {
   {
     std::lock_guard<std::mutex> lock(queue_mutex);
@@ -238,14 +337,22 @@ void Crawler::process_links(size_t size) {
 
   while (true) {
     std::string current_link;
+    int depth = 0;
 
     {
       std::lock_guard<std::mutex> lock(queue_mutex);
       if (link_queue.empty() || visited_links.size() >= size) {
         break;
       }
-      current_link = link_queue.front();
+
+      // Извлекаем URL с наибольшим приоритетом
+      UrlItem item = link_queue.top();
       link_queue.pop();
+      current_link = item.url;
+      depth = item.depth;
+
+      LOG("Processing URL with priority " << item.priority << " and depth "
+                                          << depth << ": " << current_link);
     }
 
     {
@@ -253,18 +360,21 @@ void Crawler::process_links(size_t size) {
       active_tasks++;
     }
 
-    auto task_data =
-        std::make_unique<std::pair<Crawler *, std::string>>(this, current_link);
+    // Передаём глубину в метод process
+    auto task_data = std::make_unique<std::tuple<Crawler *, std::string, int>>(
+        this, current_link, depth);
 
     parallel_scheduler_run(
         scheduler,
         [](void *arg) {
-          auto task_data = std::unique_ptr<std::pair<Crawler *, std::string>>(
-              static_cast<std::pair<Crawler *, std::string> *>(arg));
-          Crawler *crawler = task_data->first;
-          std::string link = task_data->second;
+          auto task_data =
+              std::unique_ptr<std::tuple<Crawler *, std::string, int>>(
+                  static_cast<std::tuple<Crawler *, std::string, int> *>(arg));
+          Crawler *crawler = std::get<0>(*task_data);
+          std::string link = std::get<1>(*task_data);
+          int depth = std::get<2>(*task_data);
 
-          crawler->process(link);
+          crawler->process(link, depth);
 
           {
             std::lock_guard<std::mutex> lock(crawler->task_mutex);
@@ -281,45 +391,71 @@ void Crawler::process_links(size_t size) {
   }
 }
 
-void Crawler::fetch_page(const std::string &url, std::string &content) {
+bool Crawler::fetch_page(const std::string &url, std::string &content) {
+  MEASURE_TIME("HTTP Request");
+  content.clear();
   CURL *curl = curl_easy_init();
   if (!curl) {
     LOG("Error: Failed to initialize CURL for URL: " << url);
-    return;
+    return false;
   }
-  LOG("CURL initialized successfully for URL: " << url);
 
+  // Настройка curl (без изменений)...
   curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
   curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
   curl_easy_setopt(curl, CURLOPT_WRITEDATA, &content);
-
-  // Устанавливаем User-Agent
   curl_easy_setopt(curl, CURLOPT_USERAGENT, user_agent.c_str());
-
-  // Следуем редиректам
   curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+  curl_easy_setopt(curl, CURLOPT_TIMEOUT,
+                   static_cast<long>(config.request_timeout_sec));
 
-  // Устанавливаем таймаут
-  curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
-
+  long http_code = 0;
   CURLcode res = curl_easy_perform(curl);
+
   if (res != CURLE_OK) {
     LOG("Error: curl_easy_perform() failed for URL: "
         << url << " with error: " << curl_easy_strerror(res));
     curl_easy_cleanup(curl);
-    return;
+    return false;
   }
+
+  curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
   curl_easy_cleanup(curl);
 
-  if (content.empty()) {
-    LOG("Error: Empty content fetched for URL: " << url);
+  LOG("HTTP response code for URL " << url << ": " << http_code);
+
+  // Успешные ответы - сначала обновляем счетчик и потом возвращаем результат
+  if ((http_code >= 200 && http_code < 400)) {
+    if (content.empty()) {
+      LOG("Warning: Empty content with successful HTTP code for URL: " << url);
+      return false;
+    }
+
+    // Обновляем счетчик только для успешных запросов с содержимым
+    MetricsCollector::instance().add_bytes_downloaded(content.size());
+    return true;
   }
+
+  // Обработка ошибок (без изменений)...
+  if (http_code == 404) {
+    LOG("URL not found (404): " << url);
+  } else if (http_code >= 400 && http_code < 500) {
+    LOG("Client error for URL: " << url << " with HTTP code: " << http_code);
+  } else if (http_code >= 500) {
+    LOG("Server error for URL: " << url << " with HTTP code: " << http_code);
+  } else {
+    LOG("Unexpected HTTP code " << http_code << " for URL: " << url);
+  }
+
+  return false;
 }
 
 void Crawler::parse_page(const std::string &content,
                          std::unordered_set<std::string> &links,
                          std::string &text, int mode,
                          const std::string &base_url) {
+  MEASURE_TIME("HTML Parsing");
+
   if (content.empty()) {
     links.clear();
     text.clear();
@@ -335,6 +471,8 @@ void Crawler::parse_page(const std::string &content,
 
 void Crawler::save_to_database(const std::string &url,
                                const std::string &text) {
+  MEASURE_TIME("Database Operation");
+
   LOG("Saving to database URL: " << url
                                  << " with text length: " << text.size());
   LOG("Database state: Checking if URL is processed: " << url);
@@ -344,4 +482,27 @@ void Crawler::save_to_database(const std::string &url,
   } else {
     LOG("Database state: URL already processed.");
   }
+}
+
+bool Crawler::fetch_page_with_retry(const std::string &url,
+                                    std::string &content, int max_retries,
+                                    int retry_delay_sec) {
+  if (max_retries <= 0)
+    max_retries = config.max_retries;
+  if (retry_delay_sec <= 0)
+    retry_delay_sec = config.retry_delay_sec;
+  for (int attempt = 1; attempt <= max_retries; ++attempt) {
+    if (fetch_page(url, content)) {
+      return true;
+    }
+
+    if (attempt < max_retries) {
+      LOG("Retry attempt " << attempt << " of " << max_retries
+                           << " for URL: " << url);
+      std::this_thread::sleep_for(std::chrono::seconds(retry_delay_sec));
+    }
+  }
+
+  LOG("All retry attempts failed for URL: " << url);
+  return false;
 }

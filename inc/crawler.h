@@ -1,32 +1,58 @@
 #pragma once
 #include "../libs/parallel_scheduler/parallel_scheduler.h"
+#include "crawler_config.h"
 #include "database.h"
 #include "htmlparser.h"
 #include "includes.h"
+#include "metrics_collector.h"
 #include "robots_parser.h"
+#include "url_priority.h"
 #include "url_utils.h"
-
-#define THREAD_COUNT 10
-#define MAX_LINKS 500
+#include <queue>
+#include <string>
+#include <unordered_map>
+#include <thread>
+#include <unordered_set>
 
 class Crawler {
 public:
-  Crawler(size_t thread_count = THREAD_COUNT);
+  explicit Crawler(const CrawlerConfig &config = CrawlerConfig());
   ~Crawler();
   void load_links_from_file(const std::string &filename);
-  void run(size_t size = MAX_LINKS);
+  void run(size_t size);
+
+  // Новые методы для работы с метриками
+  void print_performance_report(std::ostream &os = std::cout);
+  void reset_metrics();
 
 private:
-  void process_links(size_t size = MAX_LINKS);
-  void process(const std::string &current_link);
+  void process_links(size_t size);
+  void process(const std::string &current_link, int depth = 0);
   void process_remaining_links();
-  void fetch_page(const std::string &url, std::string &content);
+  bool fetch_page(const std::string &url, std::string &content);
   void parse_page(const std::string &content,
                   std::unordered_set<std::string> &links, std::string &text,
                   int mode, const std::string &base_url);
   void save_to_database(const std::string &url, const std::string &text);
+  bool fetch_page_with_retry(const std::string &url, std::string &content,
+                             int max_retries = 3, int retry_delay_sec = 5);
+  void add_to_queue(const std::string &url, int depth, double priority = 0.0);
+  // Новый метод для периодического вывода метрик
+  void start_metrics_reporting();
+  void stop_metrics_reporting();
 
-  std::queue<std::string> link_queue;
+  // Флаг для контроля потока отчетов
+  std::atomic<bool> metrics_running_{false};
+  std::unique_ptr<std::thread> metrics_thread_;
+  CrawlerConfig config;
+  std::ofstream log_file;
+
+  // Замена обычной очереди на очередь с приоритетом
+  std::priority_queue<UrlItem> link_queue;
+
+  // Карта для хранения глубины каждого URL
+  std::unordered_map<std::string, int> url_depths;
+
   std::unordered_set<std::string> visited_links;
   std::unordered_set<std::string> main_links;
   std::mutex queue_mutex;
@@ -38,7 +64,7 @@ private:
   std::condition_variable task_cv;
   size_t active_tasks = 0;
   RobotsParser robots_parser;
-  std::string user_agent = "MyWebCrawler/1.0"; // Ваш User-Agent строка
+  std::string user_agent;
   std::unordered_map<std::string,
                      std::chrono::time_point<std::chrono::steady_clock>>
       domain_last_access;
