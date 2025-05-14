@@ -1,8 +1,24 @@
 #include "../../inc/url_utils.h"
+#include <iostream>
 
 std::string UrlUtils::normalize_url(const std::string &url) {
   std::string normalized = url;
 
+  // Исправляем все варианты неправильного протокола
+  if (normalized.find("http:/") == 0 && normalized.find("http://") != 0) {
+    size_t pos = 6; // позиция после "http:/"
+    if (pos < normalized.length() && normalized[pos] != '/') {
+      normalized.insert(pos, "/");
+    }
+  } else if (normalized.find("https:/") == 0 &&
+             normalized.find("https://") != 0) {
+    size_t pos = 7; // позиция после "https:/"
+    if (pos < normalized.length() && normalized[pos] != '/') {
+      normalized.insert(pos, "/");
+    }
+  }
+
+  // Остальной код нормализации...
   std::transform(normalized.begin(), normalized.end(), normalized.begin(),
                  [](unsigned char c) { return std::tolower(c); });
 
@@ -34,8 +50,22 @@ std::string UrlUtils::normalize_url(const std::string &url) {
     }
   }
 
-  std::regex multi_slash("/{2,}");
-  normalized = std::regex_replace(normalized, multi_slash, "/");
+  std::string result;
+  result.reserve(normalized.size());
+  bool prev_was_slash = false;
+
+  for (char c : normalized) {
+    if (c == '/') {
+      if (!prev_was_slash) {
+        result.push_back(c);
+      }
+      prev_was_slash = true;
+    } else {
+      result.push_back(c);
+      prev_was_slash = false;
+    }
+  }
+  normalized = result;
 
   return normalized;
 }
@@ -84,34 +114,73 @@ std::string UrlUtils::make_absolute_url(const std::string &base_url,
 }
 
 std::string UrlUtils::extract_domain(const std::string &url) {
-  size_t domain_start = url.find("://");
-  if (domain_start == std::string::npos) {
-    domain_start = 0;
-  } else {
-    domain_start += 3;
+  if (url.empty()) {
+    return "";
   }
 
-  size_t domain_end = url.find('/', domain_start);
+  // Не выводим отладочную информацию в реальном использовании
+  // std::cout << "Extract domain for: " << url << " -> ";
+
+  // Обрабатываем URL с неправильным форматом протокола
+  std::string normalized_url = url;
+
+  // Исправляем URL вида "https:/domain.com" -> "https://domain.com"
+  if (normalized_url.find("http:/") == 0 &&
+      normalized_url.find("http://") != 0) {
+    size_t pos = 6; // позиция после "http:/"
+    if (pos < normalized_url.length() && normalized_url[pos] != '/') {
+      normalized_url.insert(pos, "/");
+    }
+  } else if (normalized_url.find("https:/") == 0 &&
+             normalized_url.find("https://") != 0) {
+    size_t pos = 7; // позиция после "https:/"
+    if (pos < normalized_url.length() && normalized_url[pos] != '/') {
+      normalized_url.insert(pos, "/");
+    }
+  }
+
+  // Находим начало домена (после протокола)
+  size_t domain_start = 0;
+
+  // Ищем протокол
+  size_t protocol_pos = normalized_url.find("://");
+
+  if (protocol_pos != std::string::npos) {
+    domain_start = protocol_pos + 3; // Пропускаем "://"
+  }
+
+  // Находим конец домена (первый слеш после начала домена)
+  size_t domain_end = normalized_url.find('/', domain_start);
   if (domain_end == std::string::npos) {
-    domain_end = url.size();
+    domain_end = normalized_url.length();
   }
 
-  return url.substr(domain_start, domain_end - domain_start);
+  // Извлекаем домен
+  std::string domain =
+      normalized_url.substr(domain_start, domain_end - domain_start);
+
+  // Удаляем www. префикс для единообразия
+  if (domain.size() >= 4 && domain.substr(0, 4) == "www.") {
+    domain = domain.substr(4);
+  }
+
+  // Удаляем порт, если есть
+  size_t port_pos = domain.find(':');
+  if (port_pos != std::string::npos) {
+    domain = domain.substr(0, port_pos);
+  }
+
+  // std::cout << domain << std::endl;  // Временно отключаем отладочный вывод
+  return domain;
 }
 
 bool UrlUtils::is_same_domain(const std::string &url,
                               const std::string &domain) {
   std::string url_domain = extract_domain(url);
 
-  if (url_domain == domain) {
-    return true;
-  }
-
-  if (url_domain.size() > domain.size() + 1 &&
-      url_domain.substr(url_domain.size() - domain.size() - 1) ==
-          ("." + domain)) {
-    return true;
-  }
-
-  return false;
+  // Усовершенствованная проверка, включая поддомены
+  return (url_domain == domain ||
+          url_domain.size() > domain.size() &&
+              url_domain.substr(url_domain.size() - domain.size()) == domain &&
+              url_domain[url_domain.size() - domain.size() - 1] == '.');
 }

@@ -1,6 +1,6 @@
 #include "../../inc/url_priority.h"
 #include "../../inc/url_utils.h"
-#include <regex>
+#include <cstring>
 #include <unordered_map>
 
 // Ключевые слова, которые могут указывать на важные страницы
@@ -27,18 +27,39 @@ double UrlPrioritizer::calculate_priority(const std::string &url, int depth,
 double UrlPrioritizer::keyword_score(const std::string &url) {
   double score = 1.0; // Базовый приоритет
 
-  // Проверяем наличие ключевых слов в URL
+  std::string url_lower = url;
+  std::transform(url_lower.begin(), url_lower.end(), url_lower.begin(),
+                 [](unsigned char c) { return std::tolower(c); });
+
+  // Проверяем наличие ключевых слов в URL без регулярных выражений
   for (const auto &keyword_pair : keyword_weights) {
-    std::regex keyword_regex("\\b" + keyword_pair.first + "\\b",
-                             std::regex::icase);
-    if (std::regex_search(url, keyword_regex)) {
-      score *= keyword_pair.second;
+    std::string keyword_lower = keyword_pair.first;
+
+    // Ищем ключевое слово как целое слово
+    for (size_t pos = 0; pos < url_lower.length();) {
+      pos = url_lower.find(keyword_lower, pos);
+      if (pos == std::string::npos) {
+        break;
+      }
+
+      // Проверяем границы слова
+      bool is_word_start = (pos == 0 || !std::isalnum(url_lower[pos - 1]));
+      bool is_word_end =
+          (pos + keyword_lower.length() == url_lower.length() ||
+           !std::isalnum(url_lower[pos + keyword_lower.length()]));
+
+      if (is_word_start && is_word_end) {
+        score *= keyword_pair.second;
+        break;
+      }
+
+      pos += 1;
     }
   }
 
   // Домашняя страница имеет высокий приоритет
   if (url.find_last_of("/") == url.find("://") + 2) {
-    score *= 1.5; // Домашняя страница (например, example.com/)
+    score *= 1.5;
   }
 
   return score;
@@ -97,8 +118,7 @@ double UrlPrioritizer::domain_keyword_score(const std::string &url) {
 
 bool UrlPrioritizer::url_contains_keyword(const std::string &url,
                                           const std::string &keyword) {
-  // Приводим URL и ключевое слово к нижнему регистру для регистронезависимого
-  // сравнения
+  // Приводим URL и ключевое слово к нижнему регистру
   std::string url_lower = url;
   std::transform(url_lower.begin(), url_lower.end(), url_lower.begin(),
                  [](unsigned char c) { return std::tolower(c); });
@@ -108,7 +128,24 @@ bool UrlPrioritizer::url_contains_keyword(const std::string &url,
                  keyword_lower.begin(),
                  [](unsigned char c) { return std::tolower(c); });
 
-  // Используем regex для поиска слова как отдельного компонента
-  std::regex word_regex("\\b" + keyword_lower + "\\b");
-  return std::regex_search(url_lower, word_regex);
+  // Поиск подстроки без регулярных выражений
+  for (size_t pos = 0; pos < url_lower.length();) {
+    pos = url_lower.find(keyword_lower, pos);
+    if (pos == std::string::npos) {
+      break;
+    }
+
+    // Проверяем, что ключевое слово является отдельным словом
+    bool is_word_start = (pos == 0 || !std::isalnum(url_lower[pos - 1]));
+    bool is_word_end = (pos + keyword_lower.length() == url_lower.length() ||
+                        !std::isalnum(url_lower[pos + keyword_lower.length()]));
+
+    if (is_word_start && is_word_end) {
+      return true;
+    }
+
+    pos += 1; // Продолжаем поиск дальше
+  }
+
+  return false;
 }

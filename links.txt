@@ -1,13 +1,1 @@
 https://www.allrecipes.com/
-https://www.allrecipes.com/recipes/
-https://www.allrecipes.com/gallery/quick-easy-dinner-recipes/
-https://www.allrecipes.com/recipes/76/side-dish/
-https://www.allrecipes.com/recipes/77/drinks/
-https://github.com/
-https://github.com/trending
-https://github.com/topics/machine-learning
-https://github.com/topics/web-development
-https://github.com/topics/data-science
-https://news.example.com/
-https://news.example.com/breaking/
-https://news.example.com/articles/latest

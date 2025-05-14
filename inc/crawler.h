@@ -10,8 +10,8 @@
 #include "url_utils.h"
 #include <queue>
 #include <string>
-#include <unordered_map>
 #include <thread>
+#include <unordered_map>
 #include <unordered_set>
 
 class Crawler {
@@ -36,6 +36,8 @@ private:
   void save_to_database(const std::string &url, const std::string &text);
   bool fetch_page_with_retry(const std::string &url, std::string &content,
                              int max_retries = 3, int retry_delay_sec = 5);
+  bool fetch_page_with_http_code(const std::string &url, std::string &content,
+                                 long *http_code);
   void add_to_queue(const std::string &url, int depth, double priority = 0.0);
   // Новый метод для периодического вывода метрик
   void start_metrics_reporting();

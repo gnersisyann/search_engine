@@ -77,15 +77,35 @@ private:
   std::atomic<size_t> total_bytes_downloaded_{0};
 };
 
+// В заголовочном файле (например, TimerGuard.hpp)
+
+// class TimerGuard {
+// public:
+//   explicit TimerGuard(const std::string &operation) : operation_(operation) {
+//     MetricsCollector::instance().start_timer(operation_);
+//   }
+
+//   ~TimerGuard() { MetricsCollector::instance().stop_timer(operation_); }
+
+// private:
+//   std::string operation_;
+// };
+
+// // Макрос для удобного использования, автоматически генерирует уникальное имя
+// // переменной
+// #define CONCATENATE_DETAIL(x, y) x##y
+// #define CONCATENATE(x, y) CONCATENATE_DETAIL(x, y)
+// #define MEASURE_TIME(op) TimerGuard CONCATENATE(timer_guard_, __LINE__)(op)
+
 #define MEASURE_TIME(operation) \
-    class TimerGuard { \
+    class ScopedTimer { \
     public: \
-        TimerGuard(const std::string& op) : op_(op) { \
+        ScopedTimer(const std::string& op) : op_(op) { \
             MetricsCollector::instance().start_timer(op_); \
         } \
-        ~TimerGuard() { \
+        ~ScopedTimer() { \
             MetricsCollector::instance().stop_timer(op_); \
         } \
     private: \
         std::string op_; \
-    } timer_guard_##__LINE__(operation);
+    } timer_##__LINE__(operation);

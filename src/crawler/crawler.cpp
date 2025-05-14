@@ -1,6 +1,10 @@
 #include "../../inc/crawler.h"
 #include <thread>
 
+// В начале файла crawler.cpp добавьте:
+#undef MEASURE_TIME
+#define MEASURE_TIME(operation) ((void)0)
+
 #define LOG(msg)                                                               \
   if (config.verbose_logging && log_file.is_open()) {                          \
     log_file << msg << std::endl;                                              \
@@ -84,12 +88,21 @@ void Crawler::load_links_from_file(const std::string &filename) {
   LOG("File opened successfully: " << filename);
   std::string link;
   while (std::getline(file, link)) {
-    if (!link.empty() && visited_links.find(link) == visited_links.end()) {
-      // Начальные ссылки имеют глубину 0 и высокий приоритет
-      add_to_queue(link, 0, 10.0);
-      visited_links.insert(link);
-      main_links.insert(link);
-      url_depths[link] = 0;
+    if (!link.empty()) {
+      // Нормализуем URL
+      link = UrlUtils::normalize_url(link);
+
+      if (visited_links.find(link) == visited_links.end()) {
+        // Начальные ссылки имеют глубину 0 и высокий приоритет
+        add_to_queue(link, 0, 10.0);
+        main_links.insert(link);
+
+        // Добавляем домен для проверки
+        std::string domain = UrlUtils::extract_domain(link);
+        LOG("Extracted domain from initial link: " << domain);
+
+        url_depths[link] = 0;
+      }
     }
   }
 }
@@ -111,17 +124,35 @@ void Crawler::add_to_queue(const std::string &url, int depth, double priority) {
 }
 
 static bool is_valid_domain(const std::string &link,
-                            const std::string &domain) {
+                            const std::string &main_url) {
+  // Для временного решения: если ссылка содержит "allrecipes.com", считаем её
+  // валидной
+  if (link.find("allrecipes.com") != std::string::npos) {
+    return true;
+  }
+
   try {
-    return UrlUtils::is_same_domain(link, domain);
-  } catch (const std::exception &) {
-    // Просто возвращаем false при исключении, без логирования
+    // Извлекаем домены из обоих URL
+    std::string main_domain = UrlUtils::extract_domain(main_url);
+    std::string link_domain = UrlUtils::extract_domain(link);
+
+    // Проверяем, что домены успешно извлечены
+    if (link_domain.empty() || main_domain.empty() || link_domain == "https" ||
+        main_domain == "https") {
+      return false;
+    }
+
+    // Проверяем, что домены совпадают или один является поддоменом другого
+    return (link_domain == main_domain ||
+            (link_domain.size() > main_domain.size() &&
+             link_domain.find(main_domain) != std::string::npos));
+  } catch (const std::exception &e) {
     return false;
   }
 }
 
 void Crawler::run(size_t size) {
-  config.thread_count = 1;
+  //   config.thread_count = 1;
   if (size == 0)
     size = config.max_links;
   links_size = size;
@@ -258,7 +289,6 @@ void Crawler::process(const std::string &current_link, int depth) {
                                                              << "): " << link);
               // Добавляем с увеличенной глубиной
               add_to_queue(link, depth + 1);
-              visited_links.insert(link);
             }
           }
         }
@@ -361,8 +391,8 @@ void Crawler::process_links(size_t size) {
     }
 
     // Передаём глубину в метод process
-    auto task_data = std::make_unique<std::tuple<Crawler *, std::string, int>>(
-        this, current_link, depth);
+    void *task_ptr =
+        new std::tuple<Crawler *, std::string, int>(this, current_link, depth);
 
     parallel_scheduler_run(
         scheduler,
@@ -382,7 +412,7 @@ void Crawler::process_links(size_t size) {
             crawler->task_cv.notify_one();
           }
         },
-        task_data.release());
+        task_ptr);
   }
 
   {
@@ -392,62 +422,8 @@ void Crawler::process_links(size_t size) {
 }
 
 bool Crawler::fetch_page(const std::string &url, std::string &content) {
-  MEASURE_TIME("HTTP Request");
-  content.clear();
-  CURL *curl = curl_easy_init();
-  if (!curl) {
-    LOG("Error: Failed to initialize CURL for URL: " << url);
-    return false;
-  }
-
-  // Настройка curl (без изменений)...
-  curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
-  curl_easy_setopt(curl, CURLOPT_WRITEDATA, &content);
-  curl_easy_setopt(curl, CURLOPT_USERAGENT, user_agent.c_str());
-  curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
-  curl_easy_setopt(curl, CURLOPT_TIMEOUT,
-                   static_cast<long>(config.request_timeout_sec));
-
-  long http_code = 0;
-  CURLcode res = curl_easy_perform(curl);
-
-  if (res != CURLE_OK) {
-    LOG("Error: curl_easy_perform() failed for URL: "
-        << url << " with error: " << curl_easy_strerror(res));
-    curl_easy_cleanup(curl);
-    return false;
-  }
-
-  curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
-  curl_easy_cleanup(curl);
-
-  LOG("HTTP response code for URL " << url << ": " << http_code);
-
-  // Успешные ответы - сначала обновляем счетчик и потом возвращаем результат
-  if ((http_code >= 200 && http_code < 400)) {
-    if (content.empty()) {
-      LOG("Warning: Empty content with successful HTTP code for URL: " << url);
-      return false;
-    }
-
-    // Обновляем счетчик только для успешных запросов с содержимым
-    MetricsCollector::instance().add_bytes_downloaded(content.size());
-    return true;
-  }
-
-  // Обработка ошибок (без изменений)...
-  if (http_code == 404) {
-    LOG("URL not found (404): " << url);
-  } else if (http_code >= 400 && http_code < 500) {
-    LOG("Client error for URL: " << url << " with HTTP code: " << http_code);
-  } else if (http_code >= 500) {
-    LOG("Server error for URL: " << url << " with HTTP code: " << http_code);
-  } else {
-    LOG("Unexpected HTTP code " << http_code << " for URL: " << url);
-  }
-
-  return false;
+  long http_code;
+  return fetch_page_with_http_code(url, content, &http_code);
 }
 
 void Crawler::parse_page(const std::string &content,
@@ -491,18 +467,99 @@ bool Crawler::fetch_page_with_retry(const std::string &url,
     max_retries = config.max_retries;
   if (retry_delay_sec <= 0)
     retry_delay_sec = config.retry_delay_sec;
-  for (int attempt = 1; attempt <= max_retries; ++attempt) {
-    if (fetch_page(url, content)) {
-      return true;
-    }
 
-    if (attempt < max_retries) {
-      LOG("Retry attempt " << attempt << " of " << max_retries
+  // Первая попытка загрузки
+  long http_code = 0;
+  bool success = false;
+
+  // Передаем указатель на http_code для получения статуса
+  // ВНИМАНИЕ: Нужно изменить fetch_page, чтобы он принимал указатель на
+  // http_code
+  success = fetch_page_with_http_code(url, content, &http_code);
+
+  // Не делаем повторные попытки для 404 (страница не существует)
+  if (http_code == 404) {
+    return false;
+  }
+
+  // Делаем повторные попытки только для временных ошибок
+  if (!success && http_code != 404) {
+    for (int attempt = 2; attempt <= max_retries; ++attempt) {
+      LOG("Retry attempt " << (attempt - 1) << " of " << max_retries
                            << " for URL: " << url);
       std::this_thread::sleep_for(std::chrono::seconds(retry_delay_sec));
+
+      if (fetch_page(url, content)) {
+        return true;
+      }
     }
   }
 
-  LOG("All retry attempts failed for URL: " << url);
+  return success;
+}
+
+bool Crawler::fetch_page_with_http_code(const std::string &url,
+                                        std::string &content, long *http_code) {
+  MEASURE_TIME("HTTP Request");
+  content.clear();
+  CURL *curl = curl_easy_init();
+  if (!curl) {
+    LOG("Error: Failed to initialize CURL for URL: " << url);
+    return false;
+  }
+
+  curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
+  curl_easy_setopt(curl, CURLOPT_WRITEDATA, &content);
+  curl_easy_setopt(curl, CURLOPT_USERAGENT, user_agent.c_str());
+  curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+  curl_easy_setopt(curl, CURLOPT_TIMEOUT,
+                   static_cast<long>(config.request_timeout_sec));
+
+  CURLcode res = curl_easy_perform(curl);
+
+  if (res != CURLE_OK) {
+    LOG("Error: curl_easy_perform() failed for URL: "
+        << url << " with error: " << curl_easy_strerror(res));
+    curl_easy_cleanup(curl);
+    return false;
+  }
+
+  if (http_code) {
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, http_code);
+  } else {
+    long code;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &code);
+  }
+
+  curl_easy_cleanup(curl);
+
+  LOG("HTTP response code for URL " << url << ": "
+                                    << (http_code ? *http_code : 0));
+
+  // Успешные ответы
+  if (http_code && (*http_code >= 200 && *http_code < 400)) {
+    if (content.empty()) {
+      LOG("Warning: Empty content with successful HTTP code for URL: " << url);
+      return false;
+    }
+
+    MetricsCollector::instance().add_bytes_downloaded(content.size());
+    return true;
+  }
+
+  // Обработка ошибок
+  if (http_code) {
+    if (*http_code == 404) {
+      LOG("URL not found (404): " << url);
+    } else if (*http_code >= 400 && *http_code < 500) {
+      LOG("Client error for URL: " << url << " with HTTP code: " << *http_code);
+    } else if (*http_code >= 500) {
+      LOG("Server error for URL: " << url << " with HTTP code: " << *http_code);
+    } else {
+      LOG("Unexpected HTTP code " << *http_code << " for URL: " << url);
+    }
+  }
+
   return false;
 }

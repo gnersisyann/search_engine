@@ -1,5 +1,5 @@
 CC                  = g++
-CFLAGS              = -Wall -Wextra -O3
+CFLAGS              = -g -Wall -Wextra -O0
 RM                  = rm -f
 
 NAME                = crawler
@@ -94,7 +94,7 @@ clean:
 
 fclean: clean
 	$(MAKE_LIB) $(LIBS_DIR) fclean
-	$(RM) $(NAME) $(SEARCHER) $(TEST_TARGET)
+	$(RM) $(NAME) $(SEARCHER) $(TEST_TARGET) *.db *_log.txt
 
 re: fclean all
 

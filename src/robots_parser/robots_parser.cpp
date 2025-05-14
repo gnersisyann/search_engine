@@ -2,7 +2,6 @@
 #include "../../inc/url_utils.h"
 #include <curl/curl.h>
 #include <iostream>
-#include <regex>
 #include <sstream>
 
 static size_t WriteCallback(void *contents, size_t size, size_t nmemb,
@@ -98,6 +97,15 @@ int RobotsParser::get_crawl_delay(const std::string &user_agent,
   return 0;
 }
 
+static std::string trim_whitespace(const std::string &str) {
+  size_t first = str.find_first_not_of(" \t\n\r");
+  if (first == std::string::npos) {
+    return ""; // строка содержит только пробелы
+  }
+  size_t last = str.find_last_not_of(" \t\n\r");
+  return str.substr(first, last - first + 1);
+}
+
 void RobotsParser::fetch_robots_txt(const std::string &domain) {
   std::string robots_url = "http://" + domain + "/robots.txt";
 
@@ -138,8 +146,7 @@ void RobotsParser::fetch_robots_txt(const std::string &domain) {
       line = line.substr(0, comment_pos);
     }
 
-    line = std::regex_replace(line, std::regex("^\\s+|\\s+$"), "");
-
+    line = trim_whitespace(line);
     if (line.empty()) {
       continue;
     }
@@ -149,8 +156,7 @@ void RobotsParser::fetch_robots_txt(const std::string &domain) {
       size_t colon = line.find(':');
       if (colon != std::string::npos && colon + 1 < line.size()) {
         current_agent = line.substr(colon + 1);
-        current_agent =
-            std::regex_replace(current_agent, std::regex("^\\s+|\\s+$"), "");
+        current_agent = trim_whitespace(current_agent);
 
         if (robots_cache[domain].find(current_agent) ==
             robots_cache[domain].end()) {
@@ -162,7 +168,7 @@ void RobotsParser::fetch_robots_txt(const std::string &domain) {
       size_t colon = line.find(':');
       if (colon != std::string::npos && colon + 1 < line.size()) {
         std::string path = line.substr(colon + 1);
-        path = std::regex_replace(path, std::regex("^\\s+|\\s+$"), "");
+        path = trim_whitespace(path);
 
         if (!path.empty()) {
           robots_cache[domain][current_agent].disallow_rules.push_back(path);
@@ -172,7 +178,7 @@ void RobotsParser::fetch_robots_txt(const std::string &domain) {
       size_t colon = line.find(':');
       if (colon != std::string::npos && colon + 1 < line.size()) {
         std::string path = line.substr(colon + 1);
-        path = std::regex_replace(path, std::regex("^\\s+|\\s+$"), "");
+        path = trim_whitespace(path);
 
         if (!path.empty()) {
           robots_cache[domain][current_agent].allow_rules.push_back(path);
@@ -183,8 +189,7 @@ void RobotsParser::fetch_robots_txt(const std::string &domain) {
       size_t colon = line.find(':');
       if (colon != std::string::npos && colon + 1 < line.size()) {
         std::string delay_str = line.substr(colon + 1);
-        delay_str =
-            std::regex_replace(delay_str, std::regex("^\\s+|\\s+$"), "");
+        delay_str = trim_whitespace(delay_str);
 
         try {
           int delay = std::stoi(delay_str);
@@ -198,28 +203,45 @@ void RobotsParser::fetch_robots_txt(const std::string &domain) {
 
 bool RobotsParser::matches_pattern(const std::string &url,
                                    const std::string &pattern) {
-  if (pattern.find('*') != std::string::npos) {
-    std::string regex_pattern =
-        std::regex_replace(pattern, std::regex("\\*"), ".*");
-    regex_pattern = std::regex_replace(regex_pattern, std::regex("\\+"), "\\+");
-    regex_pattern = std::regex_replace(regex_pattern, std::regex("\\?"), "\\?");
-    regex_pattern = std::regex_replace(regex_pattern, std::regex("\\."), "\\.");
-    regex_pattern = std::regex_replace(regex_pattern, std::regex("\\("), "\\(");
-    regex_pattern = std::regex_replace(regex_pattern, std::regex("\\)"), "\\)");
-    regex_pattern = std::regex_replace(regex_pattern, std::regex("\\["), "\\[");
-    regex_pattern = std::regex_replace(regex_pattern, std::regex("\\]"), "\\]");
-    regex_pattern = std::regex_replace(regex_pattern, std::regex("\\{"), "\\{");
-    regex_pattern = std::regex_replace(regex_pattern, std::regex("\\}"), "\\}");
-
-    regex_pattern = "^" + regex_pattern;
-
-    try {
-      std::regex re(regex_pattern);
-      return std::regex_match(url, re);
-    } catch (...) {
-      return url.find(pattern) == 0;
-    }
-  } else {
+  // Если шаблон не содержит специальных символов, просто проверяем начало
+  // строки
+  if (pattern.find('*') == std::string::npos) {
     return url.find(pattern) == 0;
   }
+
+  // Простая реализация сопоставления шаблона с поддержкой * (без регулярных
+  // выражений)
+  size_t url_i = 0;
+  size_t pattern_i = 0;
+  size_t star_match = std::string::npos;
+  size_t star_idx = std::string::npos;
+
+  while (url_i < url.size()) {
+    if (pattern_i < pattern.size() &&
+        (pattern[pattern_i] == '?' || pattern[pattern_i] == url[url_i])) {
+      // Символы совпадают или ? в шаблоне
+      url_i++;
+      pattern_i++;
+    } else if (pattern_i < pattern.size() && pattern[pattern_i] == '*') {
+      // Встретили * в шаблоне
+      star_match = url_i;
+      star_idx = pattern_i;
+      pattern_i++;
+    } else if (star_idx != std::string::npos) {
+      // Нет прямого совпадения, но у нас есть предыдущая звездочка
+      pattern_i = star_idx + 1;
+      star_match++;
+      url_i = star_match;
+    } else {
+      // Нет совпадения
+      return false;
+    }
+  }
+
+  // Пропускаем оставшиеся * в шаблоне
+  while (pattern_i < pattern.size() && pattern[pattern_i] == '*') {
+    pattern_i++;
+  }
+
+  return pattern_i == pattern.size();
 }

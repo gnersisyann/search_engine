@@ -1,9 +1,9 @@
 {
-    "thread_count": 16,
+    "thread_count": 10,
     "db_name": "web_crawler.db",
     "user_agent": "MyAdvancedCrawler/2.0",
     "request_timeout_sec": 15,
-    "max_links": 5000,
+    "max_links": 30,
     "max_retries": 5,
     "retry_delay_sec": 3,
     "log_filename": "crawler_log.txt",
@@ -11,8 +11,6 @@
     "domain_keyword_weight": 3.0,
     "cross_domain_keyword_weight": 1.5,
     "domain_keywords": {
-        "allrecipes.com": ["recipe", "food", "cooking", "meal"],
-        "github.com": ["repository", "code", "commit", "pull"],
-        "news.example.com": ["article", "breaking", "headlines"]
+        "allrecipes.com": ["recipe"]
     }
 }
