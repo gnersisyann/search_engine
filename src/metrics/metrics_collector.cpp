@@ -10,15 +10,12 @@ void MetricsCollector::start_timer(const std::string &operation,
                                    const std::string &url) {
   std::lock_guard<std::mutex> lock(metrics_mutex_);
 
-  // Запоминаем время начала операции
   timers_[operation] = std::chrono::high_resolution_clock::now();
 
-  // Если указан URL, сохраняем его для этой операции
   if (!url.empty()) {
     active_urls_[operation] = url;
   }
 
-  // Если это первый таймер, инициализируем общее время начала
   if (start_time_ == std::chrono::high_resolution_clock::time_point()) {
     start_time_ = std::chrono::high_resolution_clock::now();
   }
@@ -35,7 +32,6 @@ void MetricsCollector::stop_timer(const std::string &operation, bool success) {
                         .count() /
                     1000.0;
 
-    // Получаем URL и домен, если они были сохранены
     std::string domain;
     auto url_it = active_urls_.find(operation);
     if (url_it != active_urls_.end()) {
@@ -47,12 +43,10 @@ void MetricsCollector::stop_timer(const std::string &operation, bool success) {
       active_urls_.erase(url_it);
     }
 
-    // Обновляем метрики
     auto &metric = metrics_[operation];
     metric.total_time_ms += duration;
     metric.count++;
 
-    // Обновляем мин/макс
     if (metric.count == 1 || duration < metric.min_time_ms) {
       metric.min_time_ms = duration;
     }
@@ -60,18 +54,15 @@ void MetricsCollector::stop_timer(const std::string &operation, bool success) {
       metric.max_time_ms = duration;
     }
 
-    // Если не успешно, увеличиваем счетчик ошибок
     if (!success) {
       metric.error_count++;
     }
 
-    // Обновляем доменную статистику
     if (!domain.empty()) {
       metric.domain_times[domain] += duration;
       metric.domain_counts[domain]++;
     }
 
-    // Удаляем таймер из активных
     timers_.erase(it);
   }
 }
@@ -85,7 +76,6 @@ void MetricsCollector::record_metric(const std::string &operation,
   metric.total_time_ms += time_ms;
   metric.count++;
 
-  // Обновляем мин/макс
   if (metric.count == 1 || time_ms < metric.min_time_ms) {
     metric.min_time_ms = time_ms;
   }
@@ -93,12 +83,10 @@ void MetricsCollector::record_metric(const std::string &operation,
     metric.max_time_ms = time_ms;
   }
 
-  // Если не успешно, увеличиваем счетчик ошибок
   if (!success) {
     metric.error_count++;
   }
 
-  // Обновляем доменную статистику
   if (!domain.empty()) {
     metric.domain_times[domain] += time_ms;
     metric.domain_counts[domain]++;
@@ -114,7 +102,7 @@ void MetricsCollector::reset() {
   queue_size_ = 0;
   visited_count_ = 0;
   total_bytes_downloaded_ = 0;
-  // Исправление: установка текущего времени
+
   start_time_ = std::chrono::high_resolution_clock::now();
 }
 
@@ -129,7 +117,6 @@ void MetricsCollector::print_report(std::ostream &os) {
 
   os << "\n===== Web Crawler Performance Report =====\n";
 
-  // Исправление: правильное вычисление времени работы
   auto now = std::chrono::high_resolution_clock::now();
   double total_runtime_sec =
       std::chrono::duration_cast<std::chrono::seconds>(now - start_time_)
@@ -143,8 +130,6 @@ void MetricsCollector::print_report(std::ostream &os) {
   os << "Processing rate: "
      << (total_runtime_sec > 0 ? visited_count_ / total_runtime_sec : 0)
      << " URLs/second\n";
-
-  // Остальной код без изменений...
 }
 
 void MetricsCollector::increment_active_threads() { ++active_threads_; }
@@ -179,7 +164,7 @@ double MetricsCollector::get_bandwidth_usage() {
       1000.0;
   return total_runtime_sec > 0
              ? (total_bytes_downloaded_ / 1024.0) / total_runtime_sec
-             : 0; // КБ/с
+             : 0;
 }
 
 void MetricsCollector::add_bytes_downloaded(size_t bytes) {

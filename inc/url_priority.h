@@ -5,20 +5,17 @@
 
 struct UrlItem {
   std::string url;
-  int depth;       // Глубина вложенности ссылки
-  double priority; // Приоритет (чем выше, тем важнее)
+  int depth;
+  double priority;
 
   UrlItem(const std::string &url, int depth = 0, double priority = 0.0)
       : url(url), depth(depth), priority(priority) {}
 
-  // Для сравнения в priority_queue (перевернуто, т.к. priority_queue выдает
-  // наибольший элемент)
   bool operator<(const UrlItem &other) const {
     return priority < other.priority;
   }
 };
 
-// Функция для вычисления приоритета URL
 class UrlPrioritizer {
 public:
   UrlPrioritizer(const CrawlerConfig &config) : config_(config) {}

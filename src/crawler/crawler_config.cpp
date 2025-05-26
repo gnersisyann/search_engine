@@ -1,7 +1,7 @@
 #include "../../inc/crawler_config.h"
 #include <fstream>
 #include <iostream>
-#include <nlohmann/json.hpp> // Требуется библиотека JSON для C++
+#include <nlohmann/json.hpp>
 
 using json = nlohmann::json;
 
@@ -9,19 +9,16 @@ CrawlerConfig CrawlerConfig::load_from_file(const std::string &filename) {
   CrawlerConfig config;
 
   try {
-    // Открываем файл
+
     std::ifstream file(filename);
     if (!file.is_open()) {
       std::cerr << "Could not open config file: " << filename << std::endl;
-      return config; // Возвращаем дефолтные значения
+      return config;
     }
 
-    // Парсим JSON
     json j;
     file >> j;
 
-    // Загружаем значения из JSON, используя значения по умолчанию при
-    // отсутствии поля
     if (j.contains("thread_count"))
       config.thread_count = j["thread_count"];
 
@@ -72,7 +69,6 @@ CrawlerConfig CrawlerConfig::load_from_file(const std::string &filename) {
 
   } catch (const std::exception &e) {
     std::cerr << "Error loading config: " << e.what() << std::endl;
-    // Возвращаем дефолтные значения в случае ошибки
   }
 
   return config;

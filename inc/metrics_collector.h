@@ -11,46 +11,36 @@
 class MetricsCollector {
 public:
   struct OperationMetrics {
-    double total_time_ms = 0; // общее время операции в мс
-    size_t count = 0;         // количество операций
-    double min_time_ms = 0; // минимальное время операции
-    double max_time_ms = 0; // максимальное время операции
-    size_t error_count = 0; // количество ошибок
+    double total_time_ms = 0;
+    size_t count = 0;
+    double min_time_ms = 0;
+    double max_time_ms = 0;
+    size_t error_count = 0;
 
-    // Для доменной статистики
     std::unordered_map<std::string, double> domain_times;
     std::unordered_map<std::string, size_t> domain_counts;
   };
 
-  // Получение экземпляра синглтона
   static MetricsCollector &instance();
 
-  // Запуск измерения времени для операции
   void start_timer(const std::string &operation, const std::string &url = "");
 
-  // Остановка таймера и запись результата
   void stop_timer(const std::string &operation, bool success = true);
 
-  // Прямая запись метрики
   void record_metric(const std::string &operation, double time_ms,
                      bool success = true, const std::string &domain = "");
 
-  // Сброс всех метрик
   void reset();
 
-  // Получение агрегированных метрик
   std::unordered_map<std::string, OperationMetrics> get_metrics();
 
-  // Печать отчета
   void print_report(std::ostream &os = std::cout);
 
-  // Счетчики активности
   void increment_active_threads();
   void decrement_active_threads();
   void set_queue_size(size_t size);
   void set_visited_count(size_t count);
 
-  // Получение статистики производительности
   double get_urls_per_second();
   double get_bandwidth_usage();
 
@@ -69,7 +59,6 @@ private:
       timers_;
   std::unordered_map<std::string, std::string> active_urls_;
 
-  // Общая статистика
   std::atomic<size_t> active_threads_{0};
   std::atomic<size_t> queue_size_{0};
   std::atomic<size_t> visited_count_{0};
@@ -77,35 +66,14 @@ private:
   std::atomic<size_t> total_bytes_downloaded_{0};
 };
 
-// В заголовочном файле (например, TimerGuard.hpp)
-
-// class TimerGuard {
-// public:
-//   explicit TimerGuard(const std::string &operation) : operation_(operation) {
-//     MetricsCollector::instance().start_timer(operation_);
-//   }
-
-//   ~TimerGuard() { MetricsCollector::instance().stop_timer(operation_); }
-
-// private:
-//   std::string operation_;
-// };
-
-// // Макрос для удобного использования, автоматически генерирует уникальное имя
-// // переменной
-// #define CONCATENATE_DETAIL(x, y) x##y
-// #define CONCATENATE(x, y) CONCATENATE_DETAIL(x, y)
-// #define MEASURE_TIME(op) TimerGuard CONCATENATE(timer_guard_, __LINE__)(op)
-
-#define MEASURE_TIME(operation) \
-    class ScopedTimer { \
-    public: \
-        ScopedTimer(const std::string& op) : op_(op) { \
-            MetricsCollector::instance().start_timer(op_); \
-        } \
-        ~ScopedTimer() { \
-            MetricsCollector::instance().stop_timer(op_); \
-        } \
-    private: \
-        std::string op_; \
-    } timer_##__LINE__(operation);
+#define MEASURE_TIME(operation)                                                \
+  class ScopedTimer {                                                          \
+  public:                                                                      \
+    ScopedTimer(const std::string &op) : op_(op) {                             \
+      MetricsCollector::instance().start_timer(op_);                           \
+    }                                                                          \
+    ~ScopedTimer() { MetricsCollector::instance().stop_timer(op_); }           \
+                                                                               \
+  private:                                                                     \
+    std::string op_;                                                           \
+  } timer_##__LINE__(operation);

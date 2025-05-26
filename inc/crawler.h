@@ -21,12 +21,11 @@ public:
   void load_links_from_file(const std::string &filename);
   void run(size_t size);
 
-  // Новые методы для работы с метриками
   void print_performance_report(std::ostream &os = std::cout);
   void reset_metrics();
 
 private:
-bool url_matches_keywords(const std::string &url);
+  bool url_matches_keywords(const std::string &url);
 
   void process_links(size_t size);
   void process(const std::string &current_link, int depth = 0);
@@ -41,20 +40,17 @@ bool url_matches_keywords(const std::string &url);
   bool fetch_page_with_http_code(const std::string &url, std::string &content,
                                  long *http_code);
   void add_to_queue(const std::string &url, int depth, double priority = 0.0);
-  // Новый метод для периодического вывода метрик
+
   void start_metrics_reporting();
   void stop_metrics_reporting();
 
-  // Флаг для контроля потока отчетов
   std::atomic<bool> metrics_running_{false};
   std::unique_ptr<std::thread> metrics_thread_;
   CrawlerConfig config;
   std::ofstream log_file;
 
-  // Замена обычной очереди на очередь с приоритетом
   std::priority_queue<UrlItem> link_queue;
 
-  // Карта для хранения глубины каждого URL
   std::unordered_map<std::string, int> url_depths;
 
   std::unordered_set<std::string> visited_links;

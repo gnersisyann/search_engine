@@ -100,7 +100,7 @@ int RobotsParser::get_crawl_delay(const std::string &user_agent,
 static std::string trim_whitespace(const std::string &str) {
   size_t first = str.find_first_not_of(" \t\n\r");
   if (first == std::string::npos) {
-    return ""; // строка содержит только пробелы
+    return "";
   }
   size_t last = str.find_last_not_of(" \t\n\r");
   return str.substr(first, last - first + 1);
@@ -203,14 +203,11 @@ void RobotsParser::fetch_robots_txt(const std::string &domain) {
 
 bool RobotsParser::matches_pattern(const std::string &url,
                                    const std::string &pattern) {
-  // Если шаблон не содержит специальных символов, просто проверяем начало
-  // строки
+
   if (pattern.find('*') == std::string::npos) {
     return url.find(pattern) == 0;
   }
 
-  // Простая реализация сопоставления шаблона с поддержкой * (без регулярных
-  // выражений)
   size_t url_i = 0;
   size_t pattern_i = 0;
   size_t star_match = std::string::npos;
@@ -219,26 +216,21 @@ bool RobotsParser::matches_pattern(const std::string &url,
   while (url_i < url.size()) {
     if (pattern_i < pattern.size() &&
         (pattern[pattern_i] == '?' || pattern[pattern_i] == url[url_i])) {
-      // Символы совпадают или ? в шаблоне
       url_i++;
       pattern_i++;
     } else if (pattern_i < pattern.size() && pattern[pattern_i] == '*') {
-      // Встретили * в шаблоне
       star_match = url_i;
       star_idx = pattern_i;
       pattern_i++;
     } else if (star_idx != std::string::npos) {
-      // Нет прямого совпадения, но у нас есть предыдущая звездочка
       pattern_i = star_idx + 1;
       star_match++;
       url_i = star_match;
     } else {
-      // Нет совпадения
       return false;
     }
   }
 
-  // Пропускаем оставшиеся * в шаблоне
   while (pattern_i < pattern.size() && pattern[pattern_i] == '*') {
     pattern_i++;
   }

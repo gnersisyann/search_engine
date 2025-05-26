@@ -1,24 +1,21 @@
 #include "../../inc/url_utils.h"
-#include <iostream>
 
 std::string UrlUtils::normalize_url(const std::string &url) {
   std::string normalized = url;
 
-  // Исправляем все варианты неправильного протокола
   if (normalized.find("http:/") == 0 && normalized.find("http://") != 0) {
-    size_t pos = 6; // позиция после "http:/"
+    size_t pos = 6;
     if (pos < normalized.length() && normalized[pos] != '/') {
       normalized.insert(pos, "/");
     }
   } else if (normalized.find("https:/") == 0 &&
              normalized.find("https://") != 0) {
-    size_t pos = 7; // позиция после "https:/"
+    size_t pos = 7;
     if (pos < normalized.length() && normalized[pos] != '/') {
       normalized.insert(pos, "/");
     }
   }
 
-  // Остальной код нормализации...
   std::transform(normalized.begin(), normalized.end(), normalized.begin(),
                  [](unsigned char c) { return std::tolower(c); });
 
@@ -118,59 +115,47 @@ std::string UrlUtils::extract_domain(const std::string &url) {
     return "";
   }
 
-  // Не выводим отладочную информацию в реальном использовании
-  // std::cout << "Extract domain for: " << url << " -> ";
-
-  // Обрабатываем URL с неправильным форматом протокола
   std::string normalized_url = url;
 
-  // Исправляем URL вида "https:/domain.com" -> "https://domain.com"
   if (normalized_url.find("http:/") == 0 &&
       normalized_url.find("http://") != 0) {
-    size_t pos = 6; // позиция после "http:/"
+    size_t pos = 6;
     if (pos < normalized_url.length() && normalized_url[pos] != '/') {
       normalized_url.insert(pos, "/");
     }
   } else if (normalized_url.find("https:/") == 0 &&
              normalized_url.find("https://") != 0) {
-    size_t pos = 7; // позиция после "https:/"
+    size_t pos = 7;
     if (pos < normalized_url.length() && normalized_url[pos] != '/') {
       normalized_url.insert(pos, "/");
     }
   }
 
-  // Находим начало домена (после протокола)
   size_t domain_start = 0;
 
-  // Ищем протокол
   size_t protocol_pos = normalized_url.find("://");
 
   if (protocol_pos != std::string::npos) {
-    domain_start = protocol_pos + 3; // Пропускаем "://"
+    domain_start = protocol_pos + 3;
   }
 
-  // Находим конец домена (первый слеш после начала домена)
   size_t domain_end = normalized_url.find('/', domain_start);
   if (domain_end == std::string::npos) {
     domain_end = normalized_url.length();
   }
 
-  // Извлекаем домен
   std::string domain =
       normalized_url.substr(domain_start, domain_end - domain_start);
 
-  // Удаляем www. префикс для единообразия
   if (domain.size() >= 4 && domain.substr(0, 4) == "www.") {
     domain = domain.substr(4);
   }
 
-  // Удаляем порт, если есть
   size_t port_pos = domain.find(':');
   if (port_pos != std::string::npos) {
     domain = domain.substr(0, port_pos);
   }
 
-  // std::cout << domain << std::endl;  // Временно отключаем отладочный вывод
   return domain;
 }
 
@@ -178,7 +163,6 @@ bool UrlUtils::is_same_domain(const std::string &url,
                               const std::string &domain) {
   std::string url_domain = extract_domain(url);
 
-  // Усовершенствованная проверка, включая поддомены
   return (url_domain == domain ||
           url_domain.size() > domain.size() &&
               url_domain.substr(url_domain.size() - domain.size()) == domain &&
