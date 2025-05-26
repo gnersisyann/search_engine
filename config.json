@@ -1,6 +1,6 @@
 {
     "thread_count": 10,
-    "db_name": "web_crawler.db",
+    "db_name": "web_crawler1.db",
     "user_agent": "MyAdvancedCrawler/2.0",
     "request_timeout_sec": 15,
     "max_links": 30,
@@ -11,6 +11,6 @@
     "domain_keyword_weight": 3.0,
     "cross_domain_keyword_weight": 1.5,
     "domain_keywords": {
-        "allrecipes.com": ["recipe"]
+        "allrecipes.com": ["salad"]
     }
 }

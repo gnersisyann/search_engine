@@ -26,6 +26,8 @@ public:
   void reset_metrics();
 
 private:
+bool url_matches_keywords(const std::string &url);
+
   void process_links(size_t size);
   void process(const std::string &current_link, int depth = 0);
   void process_remaining_links();

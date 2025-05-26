@@ -92,18 +92,26 @@ void Crawler::load_links_from_file(const std::string &filename) {
       // Нормализуем URL
       link = UrlUtils::normalize_url(link);
 
+      // Проверяем, что URL еще не был обработан
       if (visited_links.find(link) == visited_links.end()) {
         // Начальные ссылки имеют глубину 0 и высокий приоритет
         add_to_queue(link, 0, 10.0);
-        main_links.insert(link);
+        main_links.insert(link); // Добавляем в список основных доменов
 
-        // Добавляем домен для проверки
         std::string domain = UrlUtils::extract_domain(link);
         LOG("Extracted domain from initial link: " << domain);
 
         url_depths[link] = 0;
+      } else {
+        LOG("URL already visited: " << link);
       }
     }
+  }
+
+  // Выводим информацию о загруженных основных доменах
+  LOG("Loaded main domains:");
+  for (const auto &link : main_links) {
+    LOG(" - " << UrlUtils::extract_domain(link));
   }
 }
 
@@ -123,39 +131,62 @@ void Crawler::add_to_queue(const std::string &url, int depth, double priority) {
   LOG("Added URL with priority " << priority << ": " << url);
 }
 
+// Заменить в src/crawler/crawler.cpp
 static bool is_valid_domain(const std::string &link,
                             const std::string &main_url) {
-  // Для временного решения: если ссылка содержит "allrecipes.com", считаем её
-  // валидной
-  if (link.find("allrecipes.com") != std::string::npos) {
-    return true;
-  }
-
   try {
-    // Извлекаем домены из обоих URL
+    // Извлекаем только доменную часть из обоих URL
     std::string main_domain = UrlUtils::extract_domain(main_url);
     std::string link_domain = UrlUtils::extract_domain(link);
 
     // Проверяем, что домены успешно извлечены
-    if (link_domain.empty() || main_domain.empty() || link_domain == "https" ||
-        main_domain == "https") {
+    if (link_domain.empty() || main_domain.empty()) {
+      std::cerr << "Ошибка извлечения домена: " << link << " vs " << main_url
+                << std::endl;
       return false;
     }
 
-    // Проверяем, что домены совпадают или один является поддоменом другого
-    return (link_domain == main_domain ||
-            (link_domain.size() > main_domain.size() &&
-             link_domain.find(main_domain) != std::string::npos));
+    // Проверяем, совпадают ли домены или является ли один поддоменом другого
+    if (link_domain == main_domain) {
+      return true; // Точное совпадение
+    }
+
+    // Проверка на поддомен (например, blog.example.com для example.com)
+    if (link_domain.size() > main_domain.size() &&
+        link_domain.find(main_domain,
+                         link_domain.size() - main_domain.size()) !=
+            std::string::npos &&
+        link_domain[link_domain.size() - main_domain.size() - 1] == '.') {
+      return true;
+    }
+
+    // Проверка, является ли основной домен поддоменом ссылки
+    if (main_domain.size() > link_domain.size() &&
+        main_domain.find(link_domain,
+                         main_domain.size() - link_domain.size()) !=
+            std::string::npos &&
+        main_domain[main_domain.size() - link_domain.size() - 1] == '.') {
+      return true;
+    }
+
+    return false;
   } catch (const std::exception &e) {
+    std::cerr << "Exception in domain check: " << e.what() << " for " << link
+              << " vs " << main_url << std::endl;
     return false;
   }
 }
 
 void Crawler::run(size_t size) {
-  //   config.thread_count = 1;
   if (size == 0)
     size = config.max_links;
   links_size = size;
+
+  std::cout << "Starting crawler with configuration:" << std::endl;
+  std::cout << "  Threads: " << config.thread_count << std::endl;
+  std::cout << "  Max links: " << size << std::endl;
+  std::cout << "  Database: " << config.db_name << std::endl;
+
   LOG("Running crawler with size limit: " << size);
 
   // Запускаем периодический вывод метрик
@@ -166,6 +197,9 @@ void Crawler::run(size_t size) {
 
     {
       std::lock_guard<std::mutex> lock(queue_mutex);
+      LOG("Queue status: " << link_queue.size() << " links in queue, "
+                           << visited_links.size() << " visited links out of "
+                           << size << " maximum");
 
       if (visited_links.size() >= size) {
         LOG("Visited links limit reached. Waiting for tasks to finish...");
@@ -176,24 +210,64 @@ void Crawler::run(size_t size) {
         }
 
         LOG("Processing remaining links...");
-        for (size_t i = 0; i < config.thread_count; ++i) {
-          parallel_scheduler_run(
-              scheduler,
-              [](void *arg) {
-                Crawler *crawler = static_cast<Crawler *>(arg);
-                crawler->process_remaining_links();
-              },
-              this);
-        }
         break;
       }
 
-      if (link_queue.empty() && visited_links.size() < size) {
+      if (link_queue.empty()) {
         LOG("No more links to process. Exiting...");
         break;
       }
     }
   }
+
+  std::cout << "\nCrawling completed." << std::endl;
+  std::cout << "Processed " << visited_links.size() << " URLs." << std::endl;
+  std::cout << "Results saved to " << config.db_name << std::endl;
+
+  // Сохраняем отчет о производительности
+  std::ofstream report("performance_report.txt");
+  if (report.is_open()) {
+    report << "\n===== Final Performance Report =====" << std::endl;
+    print_performance_report(report);
+    report << "==========================================\n";
+    std::cout << "Performance report saved to 'performance_report.txt'"
+              << std::endl;
+  }
+}
+
+bool Crawler::url_matches_keywords(const std::string &url) {
+  // Если нет ключевых слов, разрешаем все URL
+  if (config.domain_keywords.empty()) {
+    return true;
+  }
+
+  std::string domain = UrlUtils::extract_domain(url);
+
+  // Проверяем, есть ли для данного домена ключевые слова
+  if (config.domain_keywords.find(domain) == config.domain_keywords.end()) {
+    // Для доменов без ключевых слов разрешаем все URL
+    return true;
+  }
+
+  // Получаем список ключевых слов для домена
+  const auto &keywords = config.domain_keywords.at(domain);
+  if (keywords.empty()) {
+    return true;
+  }
+
+  // Если задан хотя бы один ключ, URL должен содержать хотя бы один из них
+  for (const auto &keyword : keywords) {
+    // Проверяем наличие ключевого слова в URL (исключая домен)
+    size_t domain_pos = url.find(domain);
+    if (domain_pos != std::string::npos) {
+      std::string path = url.substr(domain_pos + domain.length());
+      if (path.find(keyword) != std::string::npos) {
+        return true;
+      }
+    }
+  }
+
+  return false;
 }
 
 void Crawler::process(const std::string &current_link, int depth) {
@@ -283,12 +357,14 @@ void Crawler::process(const std::string &current_link, int depth) {
             }
           }
 
+          // В методе process(), внутри блока обработки ссылок добавьте проверку
           if (valid_domain && visited_links.find(link) == visited_links.end()) {
-            if (link_queue.size() < links_size) {
-              LOG("Adding link to queue and visited (depth " << depth + 1
-                                                             << "): " << link);
-              // Добавляем с увеличенной глубиной
+            // Добавляем проверку на ключевые слова
+            if (url_matches_keywords(link) && link_queue.size() < links_size) {
+              LOG("Adding link to queue (depth " << depth + 1 << "): " << link);
               add_to_queue(link, depth + 1);
+            } else {
+              LOG("Skipping URL due to keyword filter: " << link);
             }
           }
         }
@@ -302,6 +378,25 @@ void Crawler::process(const std::string &current_link, int depth) {
   {
     std::lock_guard<std::mutex> lock(queue_mutex);
     visited_links.insert(current_link);
+    LOG("Visited links count: "
+        << visited_links.size()
+        << (fetch_success ? "" : " (after fetch failure)"));
+
+    if (visited_links.size() >= links_size) {
+      LOG("Visited links limit reached. Stopping processing...");
+      return;
+    }
+  }
+
+  // В конце метода process() в src/crawler/crawler.cpp, после блока вставки в
+  // visited_links:
+  {
+    std::lock_guard<std::mutex> lock(queue_mutex);
+    visited_links.insert(current_link);
+    // Обновление счетчика обработанных URL
+    MetricsCollector::instance().set_visited_count(visited_links.size());
+    MetricsCollector::instance().set_queue_size(link_queue.size());
+
     LOG("Visited links count: "
         << visited_links.size()
         << (fetch_success ? "" : " (after fetch failure)"));
@@ -463,6 +558,7 @@ void Crawler::save_to_database(const std::string &url,
 bool Crawler::fetch_page_with_retry(const std::string &url,
                                     std::string &content, int max_retries,
                                     int retry_delay_sec) {
+  // Используем значения из конфигурации, если не указаны явно
   if (max_retries <= 0)
     max_retries = config.max_retries;
   if (retry_delay_sec <= 0)
@@ -470,27 +566,31 @@ bool Crawler::fetch_page_with_retry(const std::string &url,
 
   // Первая попытка загрузки
   long http_code = 0;
-  bool success = false;
+  bool success = fetch_page_with_http_code(url, content, &http_code);
 
-  // Передаем указатель на http_code для получения статуса
-  // ВНИМАНИЕ: Нужно изменить fetch_page, чтобы он принимал указатель на
-  // http_code
-  success = fetch_page_with_http_code(url, content, &http_code);
-
-  // Не делаем повторные попытки для 404 (страница не существует)
-  if (http_code == 404) {
+  // Не повторяем для клиентских ошибок (4xx), особенно для 404
+  if (http_code >= 400 && http_code < 500) {
+    LOG("Client error " << http_code << " for URL: " << url
+                        << " - not retrying");
     return false;
   }
 
-  // Делаем повторные попытки только для временных ошибок
-  if (!success && http_code != 404) {
-    for (int attempt = 2; attempt <= max_retries; ++attempt) {
-      LOG("Retry attempt " << (attempt - 1) << " of " << max_retries
+  // Повторные попытки только для временных ошибок (отсутствие ответа, таймауты,
+  // 5xx)
+  if (!success) {
+    for (int attempt = 1; attempt < max_retries; ++attempt) {
+      LOG("Retry attempt " << attempt << " of " << (max_retries - 1)
                            << " for URL: " << url);
       std::this_thread::sleep_for(std::chrono::seconds(retry_delay_sec));
 
-      if (fetch_page(url, content)) {
+      if (fetch_page_with_http_code(url, content, &http_code)) {
         return true;
+      }
+
+      // Если получили 4xx в повторной попытке, не продолжаем
+      if (http_code >= 400 && http_code < 500) {
+        LOG("Client error " << http_code << " on retry for URL: " << url);
+        return false;
       }
     }
   }
