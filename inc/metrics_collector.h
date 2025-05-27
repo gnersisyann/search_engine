@@ -65,15 +65,3 @@ private:
   std::chrono::high_resolution_clock::time_point start_time_;
   std::atomic<size_t> total_bytes_downloaded_{0};
 };
-
-#define MEASURE_TIME(operation)                                                \
-  class ScopedTimer {                                                          \
-  public:                                                                      \
-    ScopedTimer(const std::string &op) : op_(op) {                             \
-      MetricsCollector::instance().start_timer(op_);                           \
-    }                                                                          \
-    ~ScopedTimer() { MetricsCollector::instance().stop_timer(op_); }           \
-                                                                               \
-  private:                                                                     \
-    std::string op_;                                                           \
-  } timer_##__LINE__(operation);

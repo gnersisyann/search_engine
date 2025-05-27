@@ -164,7 +164,7 @@ bool UrlUtils::is_same_domain(const std::string &url,
   std::string url_domain = extract_domain(url);
 
   return (url_domain == domain ||
-          url_domain.size() > domain.size() &&
-              url_domain.substr(url_domain.size() - domain.size()) == domain &&
-              url_domain[url_domain.size() - domain.size() - 1] == '.');
+          (url_domain.size() > domain.size() &&
+           url_domain.substr(url_domain.size() - domain.size()) == domain &&
+           url_domain[url_domain.size() - domain.size() - 1] == '.'));
 }

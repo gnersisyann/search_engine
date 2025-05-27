@@ -5,7 +5,7 @@
 
 class Searcher {
 public:
-  Searcher();
+  Searcher(char *db);
   ~Searcher();
   std::vector<std::string> search(const std::string &query);
 

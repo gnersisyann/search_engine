@@ -1,5 +1,5 @@
 CC                  = g++
-CFLAGS              = -g -Wall -Wextra -O0
+CFLAGS              = -Wall -Wextra
 RM                  = rm -f
 
 NAME                = crawler

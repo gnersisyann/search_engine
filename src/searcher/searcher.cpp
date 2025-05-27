@@ -1,6 +1,6 @@
 #include "../../inc/searcher.h"
 
-Searcher::Searcher() { db.connect("parser.db", SEARCHER); }
+Searcher::Searcher(char *database) { db.connect(database, SEARCHER); }
 
 Searcher::~Searcher() {}
 

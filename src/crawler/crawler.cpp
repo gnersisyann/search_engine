@@ -1,9 +1,6 @@
 #include "../../inc/crawler.h"
 #include <thread>
 
-#undef MEASURE_TIME
-#define MEASURE_TIME(operation) ((void)0)
-
 #define LOG(msg)                                                               \
   if (config.verbose_logging && log_file.is_open()) {                          \
     log_file << msg << std::endl;                                              \
@@ -252,7 +249,6 @@ bool Crawler::url_matches_keywords(const std::string &url) {
 }
 
 void Crawler::process(const std::string &current_link, int depth) {
-  MEASURE_TIME("URL Processing");
 
   {
     std::lock_guard<std::mutex> lock(queue_mutex);
@@ -494,7 +490,6 @@ void Crawler::parse_page(const std::string &content,
                          std::unordered_set<std::string> &links,
                          std::string &text, int mode,
                          const std::string &base_url) {
-  MEASURE_TIME("HTML Parsing");
 
   if (content.empty()) {
     links.clear();
@@ -511,7 +506,6 @@ void Crawler::parse_page(const std::string &content,
 
 void Crawler::save_to_database(const std::string &url,
                                const std::string &text) {
-  MEASURE_TIME("Database Operation");
 
   LOG("Saving to database URL: " << url
                                  << " with text length: " << text.size());
@@ -564,7 +558,6 @@ bool Crawler::fetch_page_with_retry(const std::string &url,
 
 bool Crawler::fetch_page_with_http_code(const std::string &url,
                                         std::string &content, long *http_code) {
-  MEASURE_TIME("HTTP Request");
   content.clear();
   CURL *curl = curl_easy_init();
   if (!curl) {
