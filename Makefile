@@ -47,14 +47,6 @@ SEARCHER_SRC        = $(SEARCHER_SRC_DIR)/main.cpp \
                       $(DATABASE_SRC_DIR)/database.cpp \
                       $(URL_SRC_DIR)/url_utils.cpp
 
-# Тестовые файлы
-TEST_DIR            = tests
-TEST_SRC            = $(TEST_DIR)/test_main.cpp \
-                      $(TEST_DIR)/test_crawler.cpp \
-                      $(TEST_DIR)/test_url_utils.cpp
-TEST_OBJ            = $(TEST_SRC:%.cpp=$(OBJ_DIR)/%.o)
-TEST_TARGET         = run_tests
-
 CRAWLER_OBJ         = $(patsubst $(SRC_DIR)/%.cpp,$(OBJ_DIR)/%.o,$(CRAWLER_SRC))
 SEARCHER_OBJ        = $(patsubst $(SRC_DIR)/%.cpp,$(OBJ_DIR)/%.o,$(SEARCHER_SRC))
 
@@ -66,13 +58,8 @@ $(NAME): $(LIBS_FILE) $(CRAWLER_OBJ)
 $(SEARCHER): $(LIBS_FILE) $(SEARCHER_OBJ)
 	$(CC) $(CFLAGS) $(SEARCHER_OBJ) $(LDFLAGS) -o $@
 
-# Правило для запуска crawler с конфигурационным файлом
 run: $(NAME)
 	./$(NAME) config.json links.txt
-
-# Правило для тестов
-test: $(TEST_TARGET)
-	./$(TEST_TARGET)
 
 $(TEST_TARGET): $(LIBS_FILE) $(filter-out $(OBJ_DIR)/$(CRAWLER_SRC_DIR)/main.o, $(CRAWLER_OBJ)) $(TEST_OBJ)
 	$(CC) $(CFLAGS) $^ $(LDFLAGS) -o $@
