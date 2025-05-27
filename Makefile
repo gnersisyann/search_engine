@@ -1,44 +1,88 @@
-CRAWLER 				= 	crawler
-SEARCH 					= 	search
-CC 						= 	g++
-HEADER 					=	inc/includes.h \
-							inc/crawler.h \
-							inc/database.h \
-							inc/htmlparser.h
-DB						= 	parser.db parser.db-journal
-CFLAGS 					= 	-Wall -Wextra -Ilibs/parallel_scheduler -Iinc -O3
-LDFLAGS 				= 	-Llibs/parallel_scheduler -lparallel_scheduler -pthread -lgumbo -lcurl -lsqlite3
-PARALLEL_SCHEDULER_PATH = 	libs/parallel_scheduler
-SRC_CRAWLER 			= 	src/crawler/main.cpp \
-							src/crawler/crawler.cpp \
-							src/crawler/database.cpp \
-							src/crawler/htmlparser.cpp
-#SRC_SEARCH 			= 	src/main.cpp src/database.cpp src/htmlparser.cpp
-OBJ_CRAWLER 			= 	$(SRC_CRAWLER:.cpp=.o)
-#OBJ_SEARCH 			= 	$(SRC_SEARCH:.cpp=.o)
+CC                  = g++
+CFLAGS              = -Wall -Wextra
+RM                  = rm -f
 
-all: subsystems $(CRAWLER) #$(SEARCH)
+NAME                = crawler
+SEARCHER            = searcher
+OTHER               = logs.txt \
+                      parser.db \
+                      performance_report.txt
 
-subsystems:
-	make -C $(PARALLEL_SCHEDULER_PATH)
+LIBS_DIR            = libs/parallel_scheduler
+LIBS_FILE           = $(LIBS_DIR)/libparallel_scheduler.a
+CFLAGS              += -I$(LIBS_DIR) -Iinc
+LDFLAGS             = -L$(LIBS_DIR) -lparallel_scheduler -pthread -lgumbo -lcurl -lsqlite3
+MAKE_LIB            = make -C
 
-$(CRAWLER): $(OBJ_CRAWLER)
-	$(CC) $^ $(LDFLAGS) -o $@
+SRC_DIR             = src
+CRAWLER_SRC_DIR     = $(SRC_DIR)/crawler
+SEARCHER_SRC_DIR    = $(SRC_DIR)/searcher
+DATABASE_SRC_DIR    = $(SRC_DIR)/database
+HTMLPARSER_SRC_DIR  = $(SRC_DIR)/htmlparser
+METRICS_SRC_DIR     = $(SRC_DIR)/metrics
+URL_SRC_DIR         = $(SRC_DIR)/url
+ROBOTS_SRC_DIR      = $(SRC_DIR)/robots_parser
 
-$(SEARCH): $(OBJ_SEARCH)
-	$(CC) $^ $(LDFLAGS) -o $@
+OBJ_DIR             = obj
+CRAWLER_OBJ_DIR     = $(OBJ_DIR)/crawler
+SEARCHER_OBJ_DIR    = $(OBJ_DIR)/searcher
+DATABASE_OBJ_DIR    = $(OBJ_DIR)/database
+HTMLPARSER_OBJ_DIR  = $(OBJ_DIR)/htmlparser
+METRICS_OBJ_DIR     = $(OBJ_DIR)/metrics
+URL_OBJ_DIR         = $(OBJ_DIR)/url
+ROBOTS_OBJ_DIR      = $(OBJ_DIR)/robots_parser
 
-%.o: %.cpp $(HEADER)
-	$(CC) $(CFLAGS) $(LDFLAGS) -c $< -o $@
+CRAWLER_SRC         = $(CRAWLER_SRC_DIR)/main.cpp \
+                      $(CRAWLER_SRC_DIR)/crawler.cpp \
+                      $(CRAWLER_SRC_DIR)/crawler_config.cpp \
+                      $(DATABASE_SRC_DIR)/database.cpp \
+                      $(HTMLPARSER_SRC_DIR)/htmlparser.cpp \
+                      $(METRICS_SRC_DIR)/metrics_collector.cpp \
+                      $(URL_SRC_DIR)/url_priority.cpp \
+                      $(URL_SRC_DIR)/url_utils.cpp \
+                      $(ROBOTS_SRC_DIR)/robots_parser.cpp
+
+SEARCHER_SRC        = $(SEARCHER_SRC_DIR)/main.cpp \
+                      $(SEARCHER_SRC_DIR)/searcher.cpp \
+                      $(DATABASE_SRC_DIR)/database.cpp \
+                      $(URL_SRC_DIR)/url_utils.cpp
+
+CRAWLER_OBJ         = $(patsubst $(SRC_DIR)/%.cpp,$(OBJ_DIR)/%.o,$(CRAWLER_SRC))
+SEARCHER_OBJ        = $(patsubst $(SRC_DIR)/%.cpp,$(OBJ_DIR)/%.o,$(SEARCHER_SRC))
+
+all: $(NAME) $(SEARCHER)
+
+$(NAME): $(LIBS_FILE) $(CRAWLER_OBJ)
+	$(CC) $(CFLAGS) $(CRAWLER_OBJ) $(LDFLAGS) -o $@
+
+$(SEARCHER): $(LIBS_FILE) $(SEARCHER_OBJ)
+	$(CC) $(CFLAGS) $(SEARCHER_OBJ) $(LDFLAGS) -o $@
+
+run: $(NAME)
+	./$(NAME) config.json links.txt
+
+$(TEST_TARGET): $(LIBS_FILE) $(filter-out $(OBJ_DIR)/$(CRAWLER_SRC_DIR)/main.o, $(CRAWLER_OBJ)) $(TEST_OBJ)
+	$(CC) $(CFLAGS) $^ $(LDFLAGS) -o $@
+
+$(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(OBJ_DIR)/$(TEST_DIR)/%.o: $(TEST_DIR)/%.cpp
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -Itests -c $< -o $@
+
+$(LIBS_FILE):
+	$(MAKE_LIB) $(LIBS_DIR)
 
 clean:
-	$(MAKE) -C $(PARALLEL_SCHEDULER_PATH) clean
-	rm -f $(OBJ_CRAWLER) $(OBJ_SEARCH)
+	$(MAKE_LIB) $(LIBS_DIR) clean
+	$(RM) -rf $(OBJ_DIR) $(OTHER)
 
 fclean: clean
-	$(MAKE) -C $(PARALLEL_SCHEDULER_PATH) fclean
-	rm -f $(CRAWLER) $(SEARCH) $(DB)
+	$(MAKE_LIB) $(LIBS_DIR) fclean
+	$(RM) $(NAME) $(SEARCHER) $(TEST_TARGET) *.db *_log.txt
 
 re: fclean all
 
-.PHONY: all clean fclean re subsystems
+.PHONY: all clean fclean re test run
